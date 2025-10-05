@@ -22,6 +22,9 @@ local Bluetooth = InputContainer:extend{
     name = "Bluetooth",
     is_bluetooth_on = false,  -- Tracks the state of Bluetooth
     input_device_path = "/dev/input/event3",  -- Device path
+    current_bank = 1,  -- Current bank (1-based)
+    banks = {},  -- Bank configurations
+    bank_config_file = "bank_config.txt",  -- Bank configuration file
 }
 
 function Bluetooth:onDispatcherRegisterActions()
@@ -50,6 +53,29 @@ function Bluetooth:registerKeyEvents()
 	self.key_events.BTLastBookmark = { { "BTLastBookmark" }, event = "BTLastBookmark" }
 	self.key_events.BTToggleNightMode = { { "BTToggleNightMode" }, event = "BTToggleNightMode" }
 	self.key_events.BTToggleStatusBar = { { "BTToggleStatusBar" }, event = "BTToggleStatusBar" }
+	
+	-- Font settings cycling
+	self.key_events.BTCycleFontHinting = { { "BTCycleFontHinting" }, event = "BTCycleFontHinting" }
+	self.key_events.BTCycleFontKerning = { { "BTCycleFontKerning" }, event = "BTCycleFontKerning" }
+	self.key_events.BTCycleWordSpacing = { { "BTCycleWordSpacing" }, event = "BTCycleWordSpacing" }
+	self.key_events.BTCycleWordExpansion = { { "BTCycleWordExpansion" }, event = "BTCycleWordExpansion" }
+	
+	-- Font weight increase/decrease
+	self.key_events.BTIncreaseFontWeight = { { "BTIncreaseFontWeight" }, event = "BTIncreaseFontWeight" }
+	self.key_events.BTDecreaseFontWeight = { { "BTDecreaseFontWeight" }, event = "BTDecreaseFontWeight" }
+	
+	-- Line spacing increase/decrease
+	self.key_events.BTIncreaseLineSpacing = { { "BTIncreaseLineSpacing" }, event = "BTIncreaseLineSpacing" }
+	self.key_events.BTDecreaseLineSpacing = { { "BTDecreaseLineSpacing" }, event = "BTDecreaseLineSpacing" }
+	
+	-- Bank navigation
+	self.key_events.BTRemoteNextBank = { { "BTRemoteNextBank" }, event = "BTRemoteNextBank" }
+	self.key_events.BTRemotePrevBank = { { "BTRemotePrevBank" }, event = "BTRemotePrevBank" }
+	
+	-- Bank action mapping (BTAction1-20)
+	for i = 1, 20 do
+		self.key_events["BTAction" .. i] = { { "BTAction" .. i }, event = "BTAction" .. i }
+	end
 	
 end
 
@@ -126,12 +152,256 @@ function Bluetooth:onBTToggleStatusBar()
     UIManager:sendEvent(Event:new("ToggleFooterMode"))
 end
 
+-- Font settings cycling functions
+function Bluetooth:onBTCycleFontHinting()
+    self:cycleFontSetting("font_hinting", {0, 1, 2}, {"off", "native", "auto"})
+end
+
+function Bluetooth:onBTCycleFontKerning()
+    self:cycleFontSetting("font_kerning", {0, 1, 2, 3}, {"off", "fast", "good", "best"})
+end
+
+function Bluetooth:onBTCycleWordSpacing()
+    self:cycleWordSpacing()
+end
+
+function Bluetooth:onBTCycleWordExpansion()
+    self:cycleFontSetting("word_expansion", {0, 5, 15}, {"none", "some", "more"})
+end
+
+function Bluetooth:onBTIncreaseFontWeight()
+    self:adjustFontWeight(0.5)
+end
+
+function Bluetooth:onBTDecreaseFontWeight()
+    self:adjustFontWeight(-0.5)
+end
+
+function Bluetooth:onBTIncreaseLineSpacing()
+    self:adjustLineSpacing(5)
+end
+
+function Bluetooth:onBTDecreaseLineSpacing()
+    self:adjustLineSpacing(-5)
+end
+
+-- Bank navigation functions
+function Bluetooth:onBTRemoteNextBank()
+    self:nextBank()
+end
+
+function Bluetooth:onBTRemotePrevBank()
+    self:prevBank()
+end
+
+-- Bank action mapping functions (BTAction1-20)
+function Bluetooth:onBTAction1() self:executeBankAction(1) end
+function Bluetooth:onBTAction2() self:executeBankAction(2) end
+function Bluetooth:onBTAction3() self:executeBankAction(3) end
+function Bluetooth:onBTAction4() self:executeBankAction(4) end
+function Bluetooth:onBTAction5() self:executeBankAction(5) end
+function Bluetooth:onBTAction6() self:executeBankAction(6) end
+function Bluetooth:onBTAction7() self:executeBankAction(7) end
+function Bluetooth:onBTAction8() self:executeBankAction(8) end
+function Bluetooth:onBTAction9() self:executeBankAction(9) end
+function Bluetooth:onBTAction10() self:executeBankAction(10) end
+function Bluetooth:onBTAction11() self:executeBankAction(11) end
+function Bluetooth:onBTAction12() self:executeBankAction(12) end
+function Bluetooth:onBTAction13() self:executeBankAction(13) end
+function Bluetooth:onBTAction14() self:executeBankAction(14) end
+function Bluetooth:onBTAction15() self:executeBankAction(15) end
+function Bluetooth:onBTAction16() self:executeBankAction(16) end
+function Bluetooth:onBTAction17() self:executeBankAction(17) end
+function Bluetooth:onBTAction18() self:executeBankAction(18) end
+function Bluetooth:onBTAction19() self:executeBankAction(19) end
+function Bluetooth:onBTAction20() self:executeBankAction(20) end
+
+-- BTNone function for empty slots
+function Bluetooth:onBTNone()
+    -- Do nothing for empty action slots
+end
+
+-- Helper function to cycle through font settings
+function Bluetooth:cycleFontSetting(setting_name, values, labels)
+    -- Get the current reader UI and font module
+    local readerui = self.ui
+    if not readerui or not readerui.font then
+        return
+    end
+    
+    local current_value = readerui.font.configurable[setting_name]
+    local current_index = 1
+    
+    -- Find current index
+    for i, value in ipairs(values) do
+        if value == current_value then
+            current_index = i
+            break
+        end
+    end
+    
+    -- Cycle to next value
+    local next_index = (current_index % #values) + 1
+    local next_value = values[next_index]
+    
+    -- Apply the new setting
+    if setting_name == "font_hinting" then
+        readerui.font:onSetFontHinting(next_value)
+    elseif setting_name == "font_kerning" then
+        readerui.font:onSetFontKerning(next_value)
+    elseif setting_name == "word_expansion" then
+        readerui.font:onSetWordExpansion(next_value)
+    end
+end
+
+-- Special function for word spacing (handles array values)
+function Bluetooth:cycleWordSpacing()
+    local readerui = self.ui
+    if not readerui or not readerui.font then
+        return
+    end
+    
+    local spacing_values = {{75, 50}, {95, 75}, {100, 90}}
+    local current_value = readerui.font.configurable.word_spacing
+    local current_index = 1
+    
+    -- Find current index
+    for i, value in ipairs(spacing_values) do
+        if value[1] == current_value[1] and value[2] == current_value[2] then
+            current_index = i
+            break
+        end
+    end
+    
+    -- Cycle to next value
+    local next_index = (current_index % #spacing_values) + 1
+    local next_value = spacing_values[next_index]
+    
+    -- Apply the new setting
+    readerui.font:onSetWordSpacing(next_value)
+end
+
+-- Helper function to adjust font weight
+function Bluetooth:adjustFontWeight(delta)
+    local readerui = self.ui
+    if not readerui or not readerui.font then
+        return
+    end
+    
+    local current_weight = readerui.font.configurable.font_base_weight
+    local new_weight = current_weight + delta
+    
+    -- Clamp the weight to reasonable bounds (-3 to 5.5 as per creoptions.lua)
+    new_weight = math.max(-3, math.min(5.5, new_weight))
+    
+    -- Apply the new weight
+    readerui.font:onSetFontBaseWeight(new_weight)
+end
+
+-- Helper function to adjust line spacing
+function Bluetooth:adjustLineSpacing(delta)
+    local readerui = self.ui
+    if not readerui or not readerui.font then
+        return
+    end
+    
+    local current_spacing = readerui.font.configurable.line_spacing
+    local new_spacing = current_spacing + delta
+    
+    -- Clamp the spacing to reasonable bounds (50 to 200 as per creoptions.lua)
+    new_spacing = math.max(50, math.min(200, new_spacing))
+    
+    -- Apply the new spacing
+    readerui.font:onSetLineSpace(new_spacing)
+end
+
+-- Bank system functions
+function Bluetooth:loadBankConfig()
+    local config_path = "/mnt/onboard/.adds/koreader/plugins/bluetooth.koplugin/" .. self.bank_config_file
+    local file = io.open(config_path, "r")
+    if not file then
+        return
+    end
+    
+    local content = file:read("*all")
+    file:close()
+    
+    self.banks = {}
+    local current_bank = nil
+    local bank_number = 0
+    
+    for line in content:gmatch("[^\r\n]+") do
+        line = line:gsub("^%s*", ""):gsub("%s*$", "") -- trim whitespace
+        if line == "" then goto continue end
+        
+        if line:match("^Bank%d+$") then
+            bank_number = tonumber(line:match("Bank(%d+)"))
+            current_bank = {}
+            self.banks[bank_number] = current_bank
+        elseif line:match("^BTAction%d+:") and current_bank then
+            local action_num = tonumber(line:match("BTAction(%d+)"))
+            local target_event = line:match("BTAction%d+:(.+)")
+            current_bank[action_num] = target_event
+        end
+        
+        ::continue::
+    end
+    
+    -- Load current bank from settings
+    self.current_bank = G_reader_settings:readSetting("bluetooth_current_bank") or 1
+    if not self.banks[self.current_bank] then
+        self.current_bank = 1
+    end
+end
+
+
+function Bluetooth:nextBank()
+    local max_bank = 0
+    for bank_num, _ in pairs(self.banks) do
+        max_bank = math.max(max_bank, bank_num)
+    end
+    
+    if max_bank > 0 then
+        self.current_bank = (self.current_bank % max_bank) + 1
+        G_reader_settings:saveSetting("bluetooth_current_bank", self.current_bank)
+    end
+end
+
+function Bluetooth:prevBank()
+    local max_bank = 0
+    for bank_num, _ in pairs(self.banks) do
+        max_bank = math.max(max_bank, bank_num)
+    end
+    
+    if max_bank > 0 then
+        self.current_bank = self.current_bank - 1
+        if self.current_bank < 1 then
+            self.current_bank = max_bank
+        end
+        G_reader_settings:saveSetting("bluetooth_current_bank", self.current_bank)
+    end
+end
+
+function Bluetooth:executeBankAction(action_num)
+    local current_bank_config = self.banks[self.current_bank]
+    if not current_bank_config then return end
+    
+    local target_event = current_bank_config[action_num]
+    if not target_event then return end
+    
+    -- Execute the mapped event
+    if self["on" .. target_event] then
+        self["on" .. target_event](self)
+    end
+end
+
 
 function Bluetooth:init()
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
 
     self:registerKeyEvents()
+    self:loadBankConfig()
 end
 
 function Bluetooth:addToMainMenu(menu_items)
@@ -176,7 +446,7 @@ function Bluetooth:getScriptPath(script)
 end
 
 function Bluetooth:executeScript(script)
-    local command = "/bin/sh /mnt/onboard/.koreader/plugins/bluetooth.koplugin/" .. script
+    local command = "/bin/sh /mnt/onboard/.adds/koreader/plugins/bluetooth.koplugin/" .. script
     local handle = io.popen(command)
     local result = handle:read("*a")
     handle:close()
