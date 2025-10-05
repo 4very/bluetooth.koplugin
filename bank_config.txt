@@ -1,31 +1,35 @@
 Bank1
-BTAction1:BTIterateRotation
-BTAction2:BTIncreaseFontSize
-BTAction3:BTLeft
-BTAction4:BTDecreaseFontSize
-BTAction5:BTToggleNightMode
-BTAction6:BTGotoPrevChapter
-BTAction7:BTGotoNextChapter
-BTAction8:BTToggleBookmark
-BTAction9:BTRight
-BTAction10:BTToggleStatusBar
-BTAction11:BTPrevBookmark
-BTAction12:BTNextBookmark
-BTAction13:BTLastBookmark
-BTAction14:BTBluetoothOff
+BTAction1:BTIterateRotation, L
+BTAction2:BTIncreaseFontSize, R
+BTAction3:BTLeft, X
+BTAction4:BTDecreaseFontSize, R2
+BTAction5:BTRemoteNextBank, L2
+BTAction6:BTGotoPrevChapter, X
+BTAction7:BTGotoNextChapter, B
+BTAction8:BTToggleBookmark, UP
+BTAction9:BTRight, B
+BTAction10:BTToggleStatusBar, Star
+BTAction11:BTPrevBookmark, LEFT
+BTAction12:BTNextBookmark, RIGHT
+BTAction13:BTLastBookmark, DOWN
+BTAction14:BTBluetoothOff, Micro
+BTAction15:BTIncreaseBrightness, +
+BTAction16:BTDecreaseBrightness, -
 
 Bank2
-BTAction1:BTCycleFontHinting
-BTAction2:BTCycleFontKerning
-BTAction3:BTCycleWordSpacing
-BTAction4:BTCycleWordExpansion
-BTAction5:BTIncreaseFontWeight
-BTAction6:BTDecreaseFontWeight
-BTAction7:BTIncreaseLineSpacing
-BTAction8:BTDecreaseLineSpacing
-BTAction9:BTIncreaseBrightness
-BTAction10:BTDecreaseBrightness
-BTAction11:BTIncreaseWarmth
-BTAction12:BTDecreaseWarmth
-BTAction13:BTNone
-BTAction14:BTNone
+BTAction1:BTIterateRotation, L (same)
+BTAction2:BTIncreaseLineSpacing, R
+BTAction3:BTLeft, X (same)
+BTAction4:BTDecreaseLineSpacing, R2
+BTAction5:BTRemoteNextBank, L2 (same)
+BTAction6:BTGotoPrevChapter, X (same)
+BTAction7:BTGotoNextChapter, B (same)
+BTAction8:BTToggleBookmark, UP (same)
+BTAction9:BTRight, B (same)
+BTAction10:BTToggleNightMode, Star
+BTAction11:BTPrevBookmark, LEFT (same)
+BTAction12:BTNextBookmark, RIGHT (same)
+BTAction13:BTLastBookmark, DOWN (same)
+BTAction14:BTBluetoothOff, Micro (same)
+BTAction15:BTIncreaseWarmth, +
+BTAction16:BTDecreaseWarmth, -

@@ -341,6 +341,11 @@ function Bluetooth:loadBankConfig()
         elseif line:match("^BTAction%d+:") and current_bank then
             local action_num = tonumber(line:match("BTAction(%d+)"))
             local target_event = line:match("BTAction%d+:(.+)")
+            -- Remove anything after comma (comments)
+            if target_event then
+                target_event = target_event:match("([^,]+)") or target_event
+                target_event = target_event:gsub("^%s*", ""):gsub("%s*$", "") -- trim whitespace
+            end
             current_bank[action_num] = target_event
         end
         

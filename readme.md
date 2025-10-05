@@ -33,27 +33,87 @@ All commands can now be triggered using taps and gestures. This enhances the use
 ### Automatic Listening
 Once a device establishes a connection, it will now be automatically listened to without the need to reboot the device. This eliminates the previous requirement of restarting KOReader after enabling Bluetooth.
 
-## Dedicated Bluetooth Events
-The following new Bluetooth events have been implemented, allowing for additional functionality within KOReader:
+## Bank System
 
-- **BTGotoNextChapter:** Navigate to the next chapter.
-- **BTGotoPrevChapter:** Navigate to the previous chapter.
-- **BTDecreaseFontSize:** Reduce the font size by 1.
-- **BTIncreaseFontSize:** Increase the font size by 1.
-- **BTToggleBookmark:** Toggle bookmarks on and off.
-- **BTIterateRotation:** Rotate the screen orientation 90 degrees.
-- **BTBluetoothOff:** Turn off Bluetooth.
-- **BTRight:** Go to the next page.
-- **BTLeft:** Go to the previous page.
-- **BTPrevBookmark:** Navigate to the previous bookmark in the document.
-- **BTNextBookmark:** Navigate to the next bookmark in the document.
-- **BTLastBookmark:** Jump to the last bookmark by timestamp.
-- **BTToggleStatusBar:** Toggle the display of the status bar.
-- **BTIncreaseBrightness:** Increase the frontlight brightness by 10 units.
-- **BTDecreaseBrightness:** Decrease the frontlight brightness by 10 units.
-- **BTToggleNightMode:** Toggle between dark mode (night mode) and light mode.
-- **BTIncreaseWarmth:** Increase the warmth of the frontlight by 2 units.
-- **BTDecreaseWarmth:** Decrease the warmth of the frontlight by 2 units.
+The plugin now features a **Bank System** that allows you to use the same physical buttons for different functions by switching between banks. This is perfect for controllers with limited buttons.
+
+### How the Bank System Works:
+- **BTAction1-14**: Universal action mapping that changes based on the current bank
+- **Bank Navigation**: Use F2/F3 keys to switch between banks
+- **Bank Persistence**: Current bank is remembered across sessions
+- **Configuration**: Banks are defined in `bank_config.txt`
+
+### Bank 1: Core Navigation & Reading
+- **BTAction1**: BTIterateRotation (R) - Rotate screen 90 degrees
+- **BTAction2**: BTIncreaseFontSize (I) - Increase font size
+- **BTAction3**: BTLeft (P) - Previous page
+- **BTAction4**: BTDecreaseFontSize (D) - Decrease font size
+- **BTAction5**: BTToggleNightMode (L) - Toggle night mode
+- **BTAction6**: BTGotoPrevChapter (X) - Previous chapter
+- **BTAction7**: BTGotoNextChapter (C) - Next chapter
+- **BTAction8**: BTToggleBookmark (B) - Toggle bookmark
+- **BTAction9**: BTRight (N) - Next page
+- **BTAction10**: BTToggleStatusBar (Up arrow) - Toggle status bar
+- **BTAction11**: BTPrevBookmark (Left arrow) - Previous bookmark
+- **BTAction12**: BTNextBookmark (Right arrow) - Next bookmark
+- **BTAction13**: BTLastBookmark (Down arrow) - Last bookmark
+- **BTAction14**: BTBluetoothOff (Page Down) - Turn off Bluetooth
+
+### Bank 2: Font & Display Controls
+- **BTAction1**: BTCycleFontHinting (R) - Cycle font hinting (off→native→auto)
+- **BTAction2**: BTCycleFontKerning (I) - Cycle font kerning (off→fast→good→best)
+- **BTAction3**: BTCycleWordSpacing (P) - Cycle word spacing (small→medium→large)
+- **BTAction4**: BTCycleWordExpansion (D) - Cycle word expansion (none→some→more)
+- **BTAction5**: BTIncreaseFontWeight (L) - Increase font weight
+- **BTAction6**: BTDecreaseFontWeight (X) - Decrease font weight
+- **BTAction7**: BTIncreaseLineSpacing (C) - Increase line spacing
+- **BTAction8**: BTDecreaseLineSpacing (B) - Decrease line spacing
+- **BTAction9**: BTIncreaseBrightness (N) - Increase brightness
+- **BTAction10**: BTDecreaseBrightness (Up arrow) - Decrease brightness
+- **BTAction11**: BTIncreaseWarmth (Left arrow) - Increase warmth
+- **BTAction12**: BTDecreaseWarmth (Right arrow) - Decrease warmth
+- **BTAction13**: BTNone (Down arrow) - No action
+- **BTAction14**: BTNone (Page Down) - No action
+
+### Bank Navigation Events
+- **BTRemoteNextBank**: Switch to next bank (F2 key)
+- **BTRemotePrevBank**: Switch to previous bank (F3 key)
+
+## Font Control Events
+
+### Font Cycling Events
+- **BTCycleFontHinting**: Cycle through font hinting options (off → native → auto)
+- **BTCycleFontKerning**: Cycle through font kerning options (off → fast → good → best)
+- **BTCycleWordSpacing**: Cycle through word spacing options (small → medium → large)
+- **BTCycleWordExpansion**: Cycle through word expansion options (none → some → more)
+
+### Font Adjustment Events
+- **BTIncreaseFontWeight**: Increase font weight by 0.5 units
+- **BTDecreaseFontWeight**: Decrease font weight by 0.5 units
+- **BTIncreaseLineSpacing**: Increase line spacing by 5%
+- **BTDecreaseLineSpacing**: Decrease line spacing by 5%
+
+## Core Navigation Events
+- **BTGotoNextChapter**: Navigate to the next chapter
+- **BTGotoPrevChapter**: Navigate to the previous chapter
+- **BTDecreaseFontSize**: Reduce the font size by 2 units
+- **BTIncreaseFontSize**: Increase the font size by 2 units
+- **BTToggleBookmark**: Toggle bookmarks on and off
+- **BTIterateRotation**: Rotate the screen orientation 90 degrees
+- **BTBluetoothOff**: Turn off Bluetooth
+- **BTRight**: Go to the next page
+- **BTLeft**: Go to the previous page
+- **BTPrevBookmark**: Navigate to the previous bookmark in the document
+- **BTNextBookmark**: Navigate to the next bookmark in the document
+- **BTLastBookmark**: Jump to the last bookmark by timestamp
+- **BTToggleStatusBar**: Toggle the display of the status bar
+- **BTToggleNightMode**: Toggle between dark mode (night mode) and light mode
+
+## Display Control Events
+- **BTIncreaseBrightness**: Increase the frontlight brightness by 10 units
+- **BTDecreaseBrightness**: Decrease the frontlight brightness by 10 units
+- **BTIncreaseWarmth**: Increase the warmth of the frontlight by 1 unit
+- **BTDecreaseWarmth**: Decrease the warmth of the frontlight by 1 unit
 
 *BTRight and BTLeft are recommended for page turning instead of the default actions, as these custom events will work with all screen orientations.*
 
@@ -67,36 +127,79 @@ The following new Bluetooth events have been implemented, allowing for additiona
 6. Reboot KOReader if you haven't done so since installing the plugin.
 7. (Optional) Greate Tap & Gesture shortcuts to various events.
 
+## Bank System Configuration
+
+The plugin uses a bank system with `bank_config.txt` to define button mappings. Here's how to configure it:
+
+### bank_config.txt Structure
+```
+Bank1
+BTAction1:BTIterateRotation
+BTAction2:BTIncreaseFontSize
+BTAction3:BTLeft
+BTAction4:BTDecreaseFontSize
+BTAction5:BTToggleNightMode
+BTAction6:BTGotoPrevChapter
+BTAction7:BTGotoNextChapter
+BTAction8:BTToggleBookmark
+BTAction9:BTRight
+BTAction10:BTToggleStatusBar
+BTAction11:BTPrevBookmark
+BTAction12:BTNextBookmark
+BTAction13:BTLastBookmark
+BTAction14:BTBluetoothOff
+
+Bank2
+BTAction1:BTCycleFontHinting
+BTAction2:BTCycleFontKerning
+BTAction3:BTCycleWordSpacing
+BTAction4:BTCycleWordExpansion
+BTAction5:BTIncreaseFontWeight
+BTAction6:BTDecreaseFontWeight
+BTAction7:BTIncreaseLineSpacing
+BTAction8:BTDecreaseLineSpacing
+BTAction9:BTIncreaseBrightness
+BTAction10:BTDecreaseBrightness
+BTAction11:BTIncreaseWarmth
+BTAction12:BTDecreaseWarmth
+BTAction13:BTNone
+BTAction14:BTNone
+```
+
 ## Example device.lua Configuration
 
-Below is an example of how you can map Bluetooth device events in your `device.lua` file:
+Below is an example of how you can map Bluetooth device events in your `device.lua` file using the bank system:
 
 ```lua
 event_map = {
     -- Your existing mappings...
     
-   [46]  = "BTGotoNextChapter",  -- C for Next Chapter                           
-    [45]  = "BTGotoPrevChapter",  -- X for Previous Chapter                       
-    [32]  = "BTDecreaseFontSize", -- D for Decrease Font Size                     
-    [23]  = "BTIncreaseFontSize", -- I for Increase Font Size
-    [48]  = "BTToggleBookmark",   -- B for Toggle Bookmark   
-    [25]  = "BTLeft",             -- P for Previous Page                
-    [49]  = "BTRight",            -- N for Next Page         
-    [19]  = "BTIterateRotation",  -- R for Rotate 90 Degrees 
-    [109] = "BTBluetoothOff",     -- Page Down for Bluetooth Off
-                                                                
-    [105] = "BTPrevBookmark",    -- Left arrow key for Previous Bookmark
-    [106] = "BTNextBookmark",    -- Right arrow key for Next Bookmark   
-    [108] = "BTLastBookmark",    -- Down arrow key for Last Bookmark (by timestamp)
-    [103] = "BTToggleStatusBar", -- Up arrow key for Toggle Status Bar             
-    [60]  = "BTIncreaseBrightness",   -- F2 for Increase Brightness                
-    [59]  = "BTDecreaseBrightness",   -- F1 for Decrease Brightness                
-    [38]  = "BTToggleNightMode",     -- L for Toggle Night Mode (Dark/Light Mode)  
-
---    [49]  = "BTIncreaseWarmth",       -- N for Increase Warmth                   
---    [48]  = "BTDecreaseWarmth",       -- C for Decrease Warmth                   
+    -- Bank system mapping (BTAction1-14)
+    [19]  = "BTAction1",   -- R for BTAction1
+    [23]  = "BTAction2",   -- I for BTAction2
+    [25]  = "BTAction3",   -- P for BTAction3
+    [32]  = "BTAction4",   -- D for BTAction4
+    [38]  = "BTAction5",   -- L for BTAction5
+    [45]  = "BTAction6",   -- X for BTAction6
+    [46]  = "BTAction7",   -- C for BTAction7
+    [48]  = "BTAction8",   -- B for BTAction8
+    [49]  = "BTAction9",   -- N for BTAction9
+    [60]  = "BTRemoteNextBank",   -- F2 for Next Bank
+    [61]  = "BTRemotePrevBank",   -- F3 for Previous Bank
+    [103] = "BTAction10",  -- Up arrow for BTAction10
+    [105] = "BTAction11",  -- Left arrow for BTAction11
+    [106] = "BTAction12",  -- Right arrow for BTAction12
+    [108] = "BTAction13",  -- Down arrow for BTAction13
+    [109] = "BTAction14",  -- Page Down for BTAction14
 }
 ```
+
+### Bank System Benefits:
+- **Same buttons, different functions**: Switch between banks to access different features
+- **No button waste**: All 14 buttons work in both banks
+- **Easy customization**: Edit `bank_config.txt` to change button functions
+- **Persistent**: Current bank is remembered across sessions
+- **Scalable**: Add more banks as needed
 
 
 ## Configuring connect.sh
