@@ -54,6 +54,10 @@ function Bluetooth:registerKeyEvents()
 	self.key_events.BTToggleNightMode = { { "BTToggleNightMode" }, event = "BTToggleNightMode" }
 	self.key_events.BTToggleStatusBar = { { "BTToggleStatusBar" }, event = "BTToggleStatusBar" }
 	
+	-- Sleep and shutdown
+	self.key_events.BTSleep = { { "BTSleep" }, event = "BTSleep" }
+	self.key_events.BTBluetoothOffAndSleep = { { "BTBluetoothOffAndSleep" }, event = "BTBluetoothOffAndSleep" }
+	
 	-- Font settings cycling
 	self.key_events.BTCycleFontHinting = { { "BTCycleFontHinting" }, event = "BTCycleFontHinting" }
 	self.key_events.BTCycleFontKerning = { { "BTCycleFontKerning" }, event = "BTCycleFontKerning" }
@@ -150,6 +154,20 @@ end
 
 function Bluetooth:onBTToggleStatusBar()
     UIManager:sendEvent(Event:new("ToggleFooterMode"))
+end
+
+function Bluetooth:onBTSleep()
+    UIManager:suspend()
+end
+
+function Bluetooth:onBTBluetoothOffAndSleep()
+    -- Turn off Bluetooth first (without popup)
+    self:turnOffBluetooth()
+    
+    -- Wait 1 second, then put device to sleep
+    UIManager:scheduleIn(1, function()
+        UIManager:suspend()
+    end)
 end
 
 -- Font settings cycling functions
@@ -317,7 +335,7 @@ end
 
 -- Bank system functions
 function Bluetooth:loadBankConfig()
-    local config_path = "/mnt/onboard/.adds/koreader/plugins/bluetooth.koplugin/" .. self.bank_config_file
+    local config_path = self.path .. "/" .. self.bank_config_file
     local file = io.open(config_path, "r")
     if not file then
         return
@@ -451,7 +469,7 @@ function Bluetooth:getScriptPath(script)
 end
 
 function Bluetooth:executeScript(script)
-    local command = "/bin/sh /mnt/onboard/.adds/koreader/plugins/bluetooth.koplugin/" .. script
+    local command = "/bin/sh " .. self.path .. "/" .. script
     local handle = io.popen(command)
     local result = handle:read("*a")
     handle:close()
@@ -478,11 +496,14 @@ function Bluetooth:onBluetoothOn()
 end
 
 function Bluetooth:onBluetoothOff()
+    self:turnOffBluetooth()
+    self:popup(_("Bluetooth turned off."))
+end
+
+function Bluetooth:turnOffBluetooth()
     local script = self:getScriptPath("off.sh")
     local result = self:executeScript(script)
-
     self.is_bluetooth_on = false
-    self:popup(_("Bluetooth turned off."))
 end
 
 function Bluetooth:onRefreshPairing()

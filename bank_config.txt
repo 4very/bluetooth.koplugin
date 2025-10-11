@@ -1,35 +1,35 @@
 Bank1
-BTAction1:BTIterateRotation, L
+BTAction1:BTRemoteNextBank, L
 BTAction2:BTIncreaseFontSize, R
-BTAction3:BTLeft, X
+BTAction3:BTLeft, Y
 BTAction4:BTDecreaseFontSize, R2
-BTAction5:BTRemoteNextBank, L2
+BTAction5:BTIterateRotation, L2
 BTAction6:BTGotoPrevChapter, X
 BTAction7:BTGotoNextChapter, B
 BTAction8:BTToggleBookmark, UP
-BTAction9:BTRight, B
+BTAction9:BTRight, A
 BTAction10:BTToggleStatusBar, Star
 BTAction11:BTPrevBookmark, LEFT
 BTAction12:BTNextBookmark, RIGHT
 BTAction13:BTLastBookmark, DOWN
-BTAction14:BTBluetoothOff, Micro
+BTAction14:BTToggleStatusBar, Micro
 BTAction15:BTIncreaseBrightness, +
 BTAction16:BTDecreaseBrightness, -
 
 Bank2
-BTAction1:BTIterateRotation, L (same)
+BTAction1:BTRemoteNextBank, L (same)
 BTAction2:BTIncreaseLineSpacing, R
-BTAction3:BTLeft, X (same)
+BTAction3:BTIterateRotation, Y
 BTAction4:BTDecreaseLineSpacing, R2
-BTAction5:BTRemoteNextBank, L2 (same)
-BTAction6:BTGotoPrevChapter, X (same)
-BTAction7:BTGotoNextChapter, B (same)
-BTAction8:BTToggleBookmark, UP (same)
-BTAction9:BTRight, B (same)
-BTAction10:BTToggleNightMode, Star
-BTAction11:BTPrevBookmark, LEFT (same)
-BTAction12:BTNextBookmark, RIGHT (same)
-BTAction13:BTLastBookmark, DOWN (same)
-BTAction14:BTBluetoothOff, Micro (same)
+BTAction7:BTToggleNightMode, B
+BTAction8:BTDecreaseFontWeight, UP
+BTAction10:BTBluetoothOff, Star
+BTAction13:BTIncreaseFontWeight, DOWN
+BTAction14:BTBluetoothOffAndSleep, Micro
 BTAction15:BTIncreaseWarmth, +
 BTAction16:BTDecreaseWarmth, -
+BTAction6:BTNone, X
+BTAction5:BTNone, L2 
+BTAction11:BTNone, LEFT
+BTAction12:BTNone, RIGHT
+BTAction9:BTNone, A
