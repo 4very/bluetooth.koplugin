@@ -3,7 +3,7 @@ BTAction1:BTRemoteNextBank, L
 BTAction2:BTIncreaseFontSize, R
 BTAction3:BTLeft, Y
 BTAction4:BTDecreaseFontSize, R2
-BTAction5:BTNone, L2
+BTAction5:BTRefreshScreen, L2
 BTAction6:BTGotoPrevChapter, X
 BTAction7:BTGotoNextChapter, B
 BTAction8:BTToggleBookmark, UP
@@ -12,9 +12,9 @@ BTAction10:BTToggleStatusBar, Star
 BTAction11:BTPrevBookmark, LEFT
 BTAction12:BTNextBookmark, RIGHT
 BTAction13:BTLastBookmark, DOWN
-BTAction14:BTToggleStatusBar, Micro
 BTAction15:BTIncreaseBrightness, +
 BTAction16:BTDecreaseBrightness, -
+BTAction14:BTNone, Micro
 
 Bank2
 BTAction1:BTRemoteNextBank, L (same)

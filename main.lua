@@ -58,6 +58,9 @@ function Bluetooth:registerKeyEvents()
 	self.key_events.BTSleep = { { "BTSleep" }, event = "BTSleep" }
 	self.key_events.BTBluetoothOffAndSleep = { { "BTBluetoothOffAndSleep" }, event = "BTBluetoothOffAndSleep" }
 	
+	-- Screen refresh
+	self.key_events.BTRefreshScreen = { { "BTRefreshScreen" }, event = "BTRefreshScreen" }
+	
 	-- Font settings cycling
 	self.key_events.BTCycleFontHinting = { { "BTCycleFontHinting" }, event = "BTCycleFontHinting" }
 	self.key_events.BTCycleFontKerning = { { "BTCycleFontKerning" }, event = "BTCycleFontKerning" }
@@ -158,6 +161,10 @@ end
 
 function Bluetooth:onBTSleep()
     UIManager:suspend()
+end
+
+function Bluetooth:onBTRefreshScreen()
+    UIManager:setDirty("all", "full")
 end
 
 function Bluetooth:onBTBluetoothOffAndSleep()
