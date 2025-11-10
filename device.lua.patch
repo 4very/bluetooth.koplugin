@@ -16,17 +16,3 @@
              [194] = "RPgFwd",
              [331] = "Eraser",
              [332] = "Highlighter",
-@@ -901,6 +903,13 @@
-     -- NOTE: usb hotplug event is also available in /tmp/nickel-hardware-status (... but only when Nickel is running ;p)
-     self.input.open("fake_events")
- 
-+    local success, err = pcall(function()
-+        self.input.open("/dev/input/event3")
-+    end)
-+
-+
-+
-+
-     -- See if the device supports key repeat
-     -- This is *not* behind a hasKeys check, because we mainly use it to stop SleepCover chatter,
-     -- and sleep covers are available on a number of devices without keys ;).

@@ -525,8 +525,8 @@ function Bluetooth:onRefreshPairing()
             error("Invalid device path")
         end
 
-        Device.input.close(self.input_device_path) -- Close the input using the high-level parameter
-        Device.input.open(self.input_device_path)  -- Reopen the input using the high-level parameter
+        Device.input:close(self.input_device_path) -- Close the input using the high-level parameter
+        Device.input:open(self.input_device_path)  -- Reopen the input using the high-level parameter
         self:popup(_("Bluetooth device at ") .. self.input_device_path .. " is now open.")
     end)
 
