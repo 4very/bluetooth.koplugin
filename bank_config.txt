@@ -19,10 +19,10 @@ BTAction14:BTNone, Micro
 Bank2
 BTAction1:BTRemoteNextBank, L (same)
 BTAction2:BTIncreaseLineSpacing, R
-BTAction3:BTIterateRotation, Y
+BTAction7:BTIterateRotation, B
 BTAction4:BTDecreaseLineSpacing, R2
 BTAction5:BTRemoteNextBank, L2 
-BTAction7:BTToggleNightMode, B
+BTAction3:BTToggleNightMode, Y
 BTAction8:BTDecreaseFontWeight, UP
 BTAction13:BTIncreaseFontWeight, DOWN
 BTAction14:BTBluetoothOffAndSleep, Micro
@@ -31,5 +31,5 @@ BTAction16:BTDecreaseWarmth, -
 BTAction6:BTNone, X
 BTAction11:BTNone, LEFT
 BTAction12:BTNone, RIGHT
-BTAction9:BTNone, A
-BTAction10:BTNone, Star
+BTAction9:BTRemoteNextBank, A
+BTAction10:BTRemoteNextBank, Star

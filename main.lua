@@ -21,7 +21,7 @@ local _ = require("gettext")
 local Bluetooth = InputContainer:extend{
     name = "Bluetooth",
     is_bluetooth_on = false,  -- Tracks the state of Bluetooth
-    input_device_path = "/dev/input/event3",  -- Device path
+    input_device_path = "/dev/input/event4",  -- Device path
     current_bank = 1,  -- Current bank (1-based)
     banks = {},  -- Bank configurations
     bank_config_file = "bank_config.txt",  -- Bank configuration file
@@ -440,6 +440,18 @@ function Bluetooth:addToMainMenu(menu_items)
         sorting_hint = "network",
         sub_item_table = {
             {
+                text = _("Full Setup (WiFi + BT + Connect + Refresh)"),
+                callback = function()
+                    self:onFullBluetoothSetup()
+                end,
+            },
+            {
+                text = _("Wifi Up & Bluetooth On"),
+                callback = function()
+                    self:onWifiUpAndBluetoothOn()
+                end,
+            },
+            {
                 text = _("Bluetooth on"),
                 callback = function()
                     if not self:isWifiEnabled() then
@@ -560,11 +572,16 @@ function Bluetooth:debugPopup(msg)
     self:popup(_("DEBUG: ") .. msg)
 end
 
-function Bluetooth:popup(text)
+function Bluetooth:popup(text, timeout)
+    timeout = timeout or 2  -- Default 2 seconds
     local popup = InfoMessage:new{
         text = text,
     }
     UIManager:show(popup)
+    -- Auto-dismiss after timeout
+    UIManager:scheduleIn(timeout, function()
+        UIManager:close(popup)
+    end)
 end
 
 function Bluetooth:isWifiEnabled()
@@ -574,6 +591,156 @@ function Bluetooth:isWifiEnabled()
 
     -- Check if Wi-Fi is enabled by looking for 'ESSID'
     return result:match("ESSID") ~= nil
+end
+
+function Bluetooth:enableWifi()
+    -- Use the exact path provided
+    local enable_wifi_script = "/mnt/onboard/.koreader/enable-wifi.sh"
+    
+    -- Check if script exists
+    local file = io.open(enable_wifi_script, "r")
+    if not file then
+        return false, "Could not find enable-wifi.sh at " .. enable_wifi_script
+    end
+    file:close()
+    
+    -- Execute the script from its directory
+    local command = string.format("sh -c 'cd /mnt/onboard/.koreader && ./enable-wifi.sh'")
+    
+    local result = os.execute(command)
+    if result == 0 then
+        return true, "WiFi enabled successfully"
+    else
+        return false, "Failed to enable WiFi (exit code: " .. tostring(result) .. ")"
+    end
+end
+
+function Bluetooth:disableWifi()
+    -- Use the exact path provided
+    local disable_wifi_script = "/mnt/onboard/.koreader/disable-wifi.sh"
+    
+    -- Check if script exists
+    local file = io.open(disable_wifi_script, "r")
+    if not file then
+        return false, "Could not find disable-wifi.sh at " .. disable_wifi_script
+    end
+    file:close()
+    
+    -- Execute the script from its directory
+    local command = string.format("sh -c 'cd /mnt/onboard/.koreader && ./disable-wifi.sh'")
+    
+    local result = os.execute(command)
+    if result == 0 then
+        return true, "WiFi disabled successfully"
+    else
+        return false, "Failed to disable WiFi (exit code: " .. tostring(result) .. ")"
+    end
+end
+
+function Bluetooth:onWifiUpAndBluetoothOn()
+    -- First enable WiFi
+    local success, message = self:enableWifi()
+    if not success then
+        self:popup(_("Failed to enable WiFi: ") .. message)
+        return
+    end
+    
+    -- Wait a moment for WiFi to initialize
+    UIManager:scheduleIn(1, function()
+        -- Now turn on Bluetooth
+        self:onBluetoothOn()
+    end)
+    
+    self:popup(_("WiFi enabled. Turning on Bluetooth..."))
+end
+
+function Bluetooth:onFullBluetoothSetup()
+    -- Step 1: Enable WiFi
+    self:popup(_("Step 1: Enabling WiFi..."), 4)
+    local success, message = self:enableWifi()
+    if not success then
+        self:popup(_("Failed to enable WiFi: ") .. message, 4)
+        return
+    end
+    
+    -- Wait a bit, then show completion and move to next step
+    UIManager:scheduleIn(1, function()
+        self:popup(_("✓ WiFi enabled"), 2)
+        
+        -- Step 2: Enable Bluetooth
+        UIManager:scheduleIn(1, function()
+            self:popup(_("Step 2: Turning on Bluetooth..."), 4)
+            local script = self:getScriptPath("on.sh")
+            local result = self:executeScript(script)
+            
+            if not result or result == "" then
+                self:popup(_("Error: No result from Bluetooth script"), 4)
+                return
+            end
+            
+            if not result:match("complete") then
+                self:popup(_("Bluetooth error: ") .. result, 4)
+                return
+            end
+            
+            self.is_bluetooth_on = true
+            
+            -- Wait a bit, then show completion and move to next step
+            UIManager:scheduleIn(1, function()
+                self:popup(_("✓ Bluetooth enabled"), 2)
+                
+                -- Step 3: Connect to device
+                UIManager:scheduleIn(1, function()
+                    self:popup(_("Step 3: Connecting to device..."), 4)
+                    local connect_script = self:getScriptPath("connect.sh")
+                    local connect_result = self:executeScript(connect_script)
+                    
+                    -- Wait a bit, then show completion and move to next step
+                    UIManager:scheduleIn(1, function()
+                        self:popup(_("✓ Device connected"), 2)
+                        
+                        -- Step 4: Refresh device input
+                        UIManager:scheduleIn(1, function()
+                            self:popup(_("Step 4: Refreshing device input..."), 4)
+                            local status, err = pcall(function()
+                                if not self.input_device_path or self.input_device_path == "" then
+                                    error("Invalid device path")
+                                end
+                                Device.input:close(self.input_device_path)
+                                Device.input:open(self.input_device_path)
+                            end)
+                            
+                            if status then
+                                UIManager:scheduleIn(1, function()
+                                    self:popup(_("✓ Device input refreshed"), 2)
+                                    
+                                    -- Step 5: Disable WiFi
+                                    UIManager:scheduleIn(1, function()
+                                        self:popup(_("Step 5: Disabling WiFi..."), 4)
+                                        local wifi_success, wifi_message = self:disableWifi()
+                                        
+                                        if wifi_success then
+                                            UIManager:scheduleIn(1, function()
+                                                self:popup(_("✓ All done! Bluetooth ready, WiFi disabled."), 4)
+                                            end)
+                                        else
+                                            self:popup(_("WiFi disable warning: ") .. wifi_message, 4)
+                                            -- Still show success since Bluetooth is working
+                                            UIManager:scheduleIn(1, function()
+                                                self:popup(_("✓ Bluetooth ready (WiFi may still be on)"), 4)
+                                            end)
+                                        end
+                                    end)
+                                end)
+                            else
+                                self:popup(_("Error refreshing input: ") .. err, 4)
+                            end
+                        end)
+                    end)
+                end)
+            end)
+        end)
+    end)
 end
 
 
