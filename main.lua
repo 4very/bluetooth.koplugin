@@ -32,6 +32,8 @@ function Bluetooth:onDispatcherRegisterActions()
     Dispatcher:registerAction("bluetooth_off_action", {category="none", event="BluetoothOff", title=_("Bluetooth Off"), general=true})
     Dispatcher:registerAction("refresh_pairing_action", {category="none", event="RefreshPairing", title=_("Refresh Device Input"), general=true}) -- New action
     Dispatcher:registerAction("connect_to_device_action", {category="none", event="ConnectToDevice", title=_("Connect to Device"), general=true}) -- New action
+    Dispatcher:registerAction("full_bluetooth_setup_action", {category="none", event="BTFullBluetoothSetup", title=_("Full Bluetooth Setup"), general=true})
+    Dispatcher:registerAction("wifi_up_and_bluetooth_on_action", {category="none", event="BTWifiUpAndBluetoothOn", title=_("WiFi Up & Bluetooth On"), general=true})
 end
 
 function Bluetooth:registerKeyEvents()
@@ -57,6 +59,10 @@ function Bluetooth:registerKeyEvents()
 	-- Sleep and shutdown
 	self.key_events.BTSleep = { { "BTSleep" }, event = "BTSleep" }
 	self.key_events.BTBluetoothOffAndSleep = { { "BTBluetoothOffAndSleep" }, event = "BTBluetoothOffAndSleep" }
+	
+	-- Bluetooth setup
+	self.key_events.BTFullBluetoothSetup = { { "BTFullBluetoothSetup" }, event = "BTFullBluetoothSetup" }
+	self.key_events.BTWifiUpAndBluetoothOn = { { "BTWifiUpAndBluetoothOn" }, event = "BTWifiUpAndBluetoothOn" }
 	
 	-- Screen refresh
 	self.key_events.BTRefreshScreen = { { "BTRefreshScreen" }, event = "BTRefreshScreen" }
@@ -175,6 +181,14 @@ function Bluetooth:onBTBluetoothOffAndSleep()
     UIManager:scheduleIn(1, function()
         UIManager:suspend()
     end)
+end
+
+function Bluetooth:onBTFullBluetoothSetup()
+    self:onFullBluetoothSetup()
+end
+
+function Bluetooth:onBTWifiUpAndBluetoothOn()
+    self:onWifiUpAndBluetoothOn()
 end
 
 -- Font settings cycling functions
