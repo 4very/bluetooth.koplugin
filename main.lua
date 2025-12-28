@@ -39,20 +39,26 @@ Bluetooth.default_input_path = "/dev/input/event4"  -- Default fallback
 -- Bluetooth command configurations per device model
 -- Each config contains the commands needed to turn BT on/off
 Bluetooth.device_bt_configs = {
-    ["Kobo_goldfinch"] = {  -- Clara 2E
+    ["Kobo_goldfinch"] = {  -- Clara 2E (i.MX6)
         name = "Clara 2E",
+        driver_path = "/drivers/mx6sll-ntx/wifi/sdio_bt_pwr.ko",
         hci_attach = "/sbin/hciattach -p ttymxc1 any 1500000 flow -t 20",
         hci_kill = "pkill hciattach",
     },
-    ["Kobo_io"] = {  -- Libra 2
+    ["Kobo_io"] = {  -- Libra 2 (i.MX6)
         name = "Libra 2",
+        driver_path = "/drivers/mx6sll-ntx/wifi/sdio_bt_pwr.ko",
         hci_attach = "/sbin/rtk_hciattach -s 115200 ttymxc1 rtk_h5",
         hci_kill = "pkill rtk_hciattach",
     },
 }
+-- Default driver path (i.MX6 style)
+Bluetooth.default_driver_path = "/drivers/mx6sll-ntx/wifi/sdio_bt_pwr.ko"
+
 -- Default config (uses Clara 2E style as fallback)
 Bluetooth.default_bt_config = {
     name = "Default",
+    driver_path = nil,  -- Will be auto-detected
     hci_attach = "/sbin/hciattach -p ttymxc1 any 1500000 flow -t 20",
     hci_kill = "pkill hciattach",
 }
@@ -62,12 +68,14 @@ Bluetooth.default_bt_config = {
 Bluetooth.binary_to_config = {
     ["rtk_hciattach"] = {  -- Libra 2 style (Realtek chip)
         name = "Auto-detected (Realtek/Libra 2 style)",
+        driver_path = nil,  -- Will be auto-detected
         hci_attach = "/sbin/rtk_hciattach -s 115200 ttymxc1 rtk_h5",
         hci_kill = "pkill rtk_hciattach",
         detection_method = "rtk_hciattach binary found in /sbin",
     },
     ["hciattach"] = {  -- Clara 2E style (standard)
         name = "Auto-detected (Standard/Clara 2E style)",
+        driver_path = nil,  -- Will be auto-detected
         hci_attach = "/sbin/hciattach -p ttymxc1 any 1500000 flow -t 20",
         hci_kill = "pkill hciattach",
         detection_method = "hciattach binary found in /sbin",
@@ -1409,6 +1417,14 @@ function Bluetooth:getEventMapEditorMenu()
         end,
     })
     
+    -- Guided Simple Setup
+    table.insert(menu, {
+        text = _("🧙 Guided Simple Setup"),
+        callback = function()
+            self:startGuidedSetup()
+        end,
+    })
+    
     -- Reload from file
     table.insert(menu, {
         text = _("🔄 Reload from file"),
@@ -1418,6 +1434,378 @@ function Bluetooth:getEventMapEditorMenu()
     })
     
     return menu
+end
+
+-- Guided Simple Setup wizard state
+Bluetooth.guided_setup = {
+    active = false,
+    mappings = {},
+    step = 0,
+}
+
+-- User-friendly action names for guided setup
+Bluetooth.friendly_action_names = {
+    ["BTRight"] = "Next Page",
+    ["BTLeft"] = "Previous Page",
+    ["BTGotoNextChapter"] = "Next Chapter",
+    ["BTGotoPrevChapter"] = "Previous Chapter",
+    ["BTIncreaseFontSize"] = "Increase Font Size",
+    ["BTDecreaseFontSize"] = "Decrease Font Size",
+    ["BTToggleBookmark"] = "Toggle Bookmark",
+    ["BTIterateRotation"] = "Rotate Screen",
+    ["BTIncreaseBrightness"] = "Increase Brightness",
+    ["BTDecreaseBrightness"] = "Decrease Brightness",
+    ["BTIncreaseWarmth"] = "Increase Warmth",
+    ["BTDecreaseWarmth"] = "Decrease Warmth",
+    ["BTNextBookmark"] = "Next Bookmark",
+    ["BTPrevBookmark"] = "Previous Bookmark",
+    ["BTLastBookmark"] = "Last Bookmark",
+    ["BTToggleNightMode"] = "Toggle Night Mode",
+    ["BTToggleStatusBar"] = "Toggle Status Bar",
+    ["BTRefreshScreen"] = "Refresh Screen",
+    ["BTSleep"] = "Sleep Device",
+    ["BTRemoteNextBank"] = "Next Bank (Advanced)",
+    ["BTRemotePrevBank"] = "Previous Bank (Advanced)",
+}
+
+-- Common actions shown first in guided setup
+Bluetooth.common_actions = {
+    "BTRight",           -- Next Page
+    "BTLeft",            -- Previous Page
+    "BTGotoNextChapter",
+    "BTGotoPrevChapter",
+    "BTToggleBookmark",
+    "BTIncreaseFontSize",
+    "BTDecreaseFontSize",
+    "BTIncreaseBrightness",
+    "BTDecreaseBrightness",
+}
+
+function Bluetooth:startGuidedSetup()
+    -- Check if Bluetooth is on
+    if not self:isBluetoothOn() then
+        UIManager:show(ConfirmBox:new{
+            text = _("Bluetooth is not enabled.\n\nWould you like to turn it on first?"),
+            ok_text = _("Turn On Bluetooth"),
+            ok_callback = function()
+                self:onBluetoothOn()
+                -- Schedule to continue after BT is on
+                UIManager:scheduleIn(3, function()
+                    if self:isBluetoothOn() then
+                        self:continueGuidedSetup()
+                    else
+                        self:popup(_("Failed to turn on Bluetooth. Please try manually."), 5)
+                    end
+                end)
+            end,
+            cancel_text = _("Cancel"),
+        })
+        return
+    end
+    
+    self:continueGuidedSetup()
+end
+
+function Bluetooth:continueGuidedSetup()
+    -- Initialize guided setup state
+    self.guided_setup = {
+        active = true,
+        mappings = {},
+        step = 0,
+    }
+    
+    -- Reset dialog state flags
+    self._guided_asking_more = false
+    self._guided_selection_made = false
+    
+    -- Ensure input device is open (try to open, ignore errors if already open)
+    local status, err = pcall(function()
+        if self.input_device_path and self.input_device_path ~= "" then
+            -- Just try to open - Device.input handles duplicates gracefully
+            Device.input:open(self.input_device_path)
+        end
+    end)
+    
+    -- Don't fail if open had issues - the device might already be open
+    -- We'll find out when we try to capture input
+    
+    -- Start the first button capture
+    self:guidedCaptureNextButton()
+end
+
+function Bluetooth:guidedCaptureNextButton()
+    self.guided_setup.step = self.guided_setup.step + 1
+    local step = self.guided_setup.step
+    
+    local msg = string.format(_("BUTTON %d\n\n"), step) ..
+        _("Press a button on your Bluetooth controller.\n\n") ..
+        _("Listening for 10 seconds...")
+    
+    self:popup(msg, 2)
+    
+    -- Start capture after popup
+    UIManager:scheduleIn(0.5, function()
+        self:guidedStartCapture(step)
+    end)
+end
+
+function Bluetooth:guidedStartCapture(step)
+    -- Use the same mechanism as startLiveCapture but stop on first key press
+    local plugin = self
+    local timeout_secs = 10
+    
+    -- Mark as waiting for capture
+    self.guided_capture_waiting = true
+    self.guided_capture_step = step
+    
+    -- Store original handler if not already stored
+    if not self._guided_original_handler then
+        self._guided_original_handler = Device.input.handleKeyBoardEv
+    end
+    
+    -- Hook into the keyboard event handler (same pattern as startLiveCapture)
+    Device.input.handleKeyBoardEv = function(self_input, ev)
+        if plugin.guided_capture_waiting and ev.value == 1 then  -- Key press only
+            plugin.guided_capture_waiting = false
+            local detected_code = ev.code
+            local current_step = plugin.guided_capture_step
+            
+            -- Restore original handler immediately
+            if plugin._guided_original_handler then
+                Device.input.handleKeyBoardEv = plugin._guided_original_handler
+                plugin._guided_original_handler = nil
+            end
+            
+            -- Schedule action selection (deferred to avoid event issues)
+            UIManager:scheduleIn(0.1, function()
+                plugin:guidedShowActionSelection(current_step, detected_code)
+            end)
+        end
+        
+        -- Always call original handler to keep system working
+        if plugin._guided_original_handler then
+            return plugin._guided_original_handler(self_input, ev)
+        end
+    end
+    
+    -- Set timeout
+    UIManager:scheduleIn(timeout_secs, function()
+        if plugin.guided_capture_waiting then
+            plugin.guided_capture_waiting = false
+            
+            -- Restore original handler
+            if plugin._guided_original_handler then
+                Device.input.handleKeyBoardEv = plugin._guided_original_handler
+                plugin._guided_original_handler = nil
+            end
+            
+            -- Ask if they want to try again or finish
+            UIManager:show(ConfirmBox:new{
+                text = _("No button press detected.\n\nDo you want to try again?"),
+                ok_text = _("Try Again"),
+                ok_callback = function()
+                    plugin.guided_setup.step = plugin.guided_setup.step - 1
+                    plugin:guidedCaptureNextButton()
+                end,
+                cancel_text = _("Finish Setup"),
+                cancel_callback = function()
+                    plugin:guidedFinishSetup()
+                end,
+            })
+        end
+    end)
+end
+
+function Bluetooth:guidedShowActionSelection(step, key_code)
+    local key_name = self:getKeyCodeName(key_code) or "Unknown"
+    
+    -- Reset dialog state flags for clean state
+    self._guided_asking_more = false
+    
+    local menu_items = {}
+    
+    -- Add common actions first
+    table.insert(menu_items, {
+        text = _("─── Common Actions ───"),
+        enabled = false,
+    })
+    
+    for idx, event_name in ipairs(self.common_actions) do
+        local friendly = self.friendly_action_names[event_name] or event_name:gsub("^BT", "")
+        table.insert(menu_items, {
+            text = friendly,
+            callback = function()
+                self._guided_selection_made = true
+                UIManager:close(self._guided_action_menu)
+                self:guidedAssignAction(step, key_code, event_name)
+            end,
+        })
+    end
+    
+    -- Add separator and all other actions
+    table.insert(menu_items, {
+        text = _("─── All Actions ───"),
+        enabled = false,
+    })
+    
+    for idx, event_name in ipairs(self.available_bt_events) do
+        -- Skip if already in common actions
+        local is_common = false
+        for j, common in ipairs(self.common_actions) do
+            if common == event_name then
+                is_common = true
+                break
+            end
+        end
+        
+        if not is_common then
+            local friendly = self.friendly_action_names[event_name] or event_name:gsub("^BT", "")
+            table.insert(menu_items, {
+                text = friendly,
+                callback = function()
+                    self._guided_selection_made = true
+                    UIManager:close(self._guided_action_menu)
+                    self:guidedAssignAction(step, key_code, event_name)
+                end,
+            })
+        end
+    end
+    
+    -- Add skip option
+    table.insert(menu_items, {
+        text = _("─── ───"),
+        enabled = false,
+    })
+    table.insert(menu_items, {
+        text = _("Skip this button"),
+        callback = function()
+            self._guided_selection_made = true
+            UIManager:close(self._guided_action_menu)
+            self:guidedAskMoreButtons()
+        end,
+    })
+    
+    local Menu = require("ui/widget/menu")
+    local Screen = Device.screen
+    self._guided_selection_made = false  -- Reset flag
+    self._guided_action_menu = Menu:new{
+        title = string.format(_("Button detected: Code %d (%s)\n\nWhat should this button do?"), key_code, key_name),
+        item_table = menu_items,
+        width = Screen:getWidth() - 100,
+        height = Screen:getHeight() - 100,
+        single_line = true,
+        items_per_page = 12,
+        close_callback = function()
+            -- If closed without making a selection, finish the setup
+            if not self._guided_selection_made then
+                UIManager:scheduleIn(0.1, function()
+                    if self.guided_setup.active then
+                        self:guidedFinishSetup()
+                    end
+                end)
+            end
+        end,
+    }
+    UIManager:show(self._guided_action_menu)
+end
+
+function Bluetooth:guidedAssignAction(step, key_code, event_name)
+    -- Save the mapping
+    self.guided_setup.mappings[key_code] = event_name
+    
+    -- Go directly to asking about more buttons (no intermediate popup)
+    -- The summary at the end will show all mappings
+    self:guidedAskMoreButtons()
+end
+
+function Bluetooth:guidedAskMoreButtons()
+    if not self.guided_setup.active then
+        return
+    end
+    
+    -- Prevent duplicate dialogs
+    if self._guided_asking_more then
+        return
+    end
+    self._guided_asking_more = true
+    
+    local mapped_count = 0
+    for k, v in pairs(self.guided_setup.mappings) do
+        mapped_count = mapped_count + 1
+    end
+    
+    self._guided_more_dialog = ConfirmBox:new{
+        text = string.format(_("You have mapped %d button(s) so far.\n\nDo you have more buttons to configure?"), mapped_count),
+        ok_text = _("Yes, add more"),
+        ok_callback = function()
+            self._guided_asking_more = false
+            self:guidedCaptureNextButton()
+        end,
+        cancel_text = _("No, finish setup"),
+        cancel_callback = function()
+            self._guided_asking_more = false
+            self:guidedFinishSetup()
+        end,
+    }
+    UIManager:show(self._guided_more_dialog)
+end
+
+function Bluetooth:guidedFinishSetup()
+    self.guided_setup.active = false
+    self._guided_asking_more = false
+    self._guided_selection_made = false
+    
+    -- Restore handler if still hooked
+    if self._guided_original_handler then
+        Device.input.handleKeyBoardEv = self._guided_original_handler
+        self._guided_original_handler = nil
+    end
+    
+    local mapped_count = 0
+    for k, v in pairs(self.guided_setup.mappings) do
+        mapped_count = mapped_count + 1
+    end
+    
+    if mapped_count == 0 then
+        self:popup(_("Setup cancelled. No buttons were mapped."), 3)
+        return
+    end
+    
+    -- Show summary and confirm save
+    local summary_lines = {_("Summary of button mappings:\n")}
+    
+    for code, event_name in pairs(self.guided_setup.mappings) do
+        local key_name = self:getKeyCodeName(code) or "Code " .. code
+        local friendly = self.friendly_action_names[event_name] or event_name:gsub("^BT", "")
+        table.insert(summary_lines, string.format("  %s → %s", key_name, friendly))
+    end
+    
+    table.insert(summary_lines, "")
+    table.insert(summary_lines, _("Save these mappings?"))
+    
+    UIManager:show(ConfirmBox:new{
+        text = table.concat(summary_lines, "\n"),
+        ok_text = _("Save"),
+        ok_callback = function()
+            -- Merge with existing mappings
+            local existing = self:getCurrentEventMap()
+            for code, event_name in pairs(self.guided_setup.mappings) do
+                existing[code] = event_name
+            end
+            
+            -- Save to file
+            local success, path = self:writeCustomEventMap(existing)
+            if success then
+                self:popup(_("Mappings saved successfully!\n\nYour controller is now configured."), 5)
+            else
+                self:popup(_("Failed to save mappings."), 5)
+            end
+        end,
+        cancel_text = _("Discard"),
+        cancel_callback = function()
+            self:popup(_("Mappings discarded."), 2)
+        end,
+    })
 end
 
 function Bluetooth:showMappingOptions(code, event_name, mappings)
@@ -1792,6 +2180,44 @@ function Bluetooth:detectBluetoothBinaries()
     return binaries_found
 end
 
+function Bluetooth:detectBluetoothDriverPath()
+    -- Try to find the Bluetooth power driver
+    -- Different Kobo devices have it in different locations
+    
+    local possible_paths = {
+        -- i.MX6 devices (Clara 2E, Libra 2, etc.)
+        "/drivers/mx6sll-ntx/wifi/sdio_bt_pwr.ko",
+        -- MediaTek devices (Clara BW, Clara Colour, Libra Colour)
+        "/drivers/mt8113t-ntx/wifi/sdio_bt_pwr.ko",
+        -- Other possible locations
+        "/drivers/*/wifi/sdio_bt_pwr.ko",
+    }
+    
+    -- First, try exact paths
+    for i, path in ipairs(possible_paths) do
+        if not path:find("%*") then
+            local attr = lfs.attributes(path)
+            if attr then
+                return path
+            end
+        end
+    end
+    
+    -- Try to find it dynamically in /drivers
+    local handle = io.popen("find /drivers -name 'sdio_bt_pwr.ko' 2>/dev/null | head -1")
+    if handle then
+        local result = handle:read("*a")
+        handle:close()
+        result = result and result:gsub("%s+$", "") or ""
+        if result ~= "" then
+            return result
+        end
+    end
+    
+    -- Fallback to default
+    return self.default_driver_path
+end
+
 function Bluetooth:getBluetoothConfig()
     -- Get device-specific Bluetooth configuration
     -- Priority: 1) Known device model, 2) Binary detection, 3) Default
@@ -2039,28 +2465,90 @@ function Bluetooth:getDiagnosticsMenu()
             if err then
                 self:popup(_("✗ Error checking event map:\n\n") .. err, 5)
             elseif ok then
-                self:popup(_("✓ Event map has BT event entries.\n\n") ..
+                local msg = _("✓ Event map has BT event entries.\n\n") ..
                     _("Found ") .. #found .. _(" BT mappings:\n") ..
-                    table.concat(found, ", "), 7)
+                    table.concat(found, ", ")
+                
+                -- Show ButtonDialog with OK and Delete options
+                local ButtonDialog = require("ui/widget/buttondialog")
+                local button_dialog
+                button_dialog = ButtonDialog:new{
+                    title = msg,
+                    buttons = {
+                        {
+                            {
+                                text = _("OK"),
+                                callback = function()
+                                    UIManager:close(button_dialog)
+                                end,
+                            },
+                        },
+                        {
+                            {
+                                text = _("Delete Mappings"),
+                                callback = function()
+                                    UIManager:close(button_dialog)
+                                    -- Confirm deletion
+                                    UIManager:show(ConfirmBox:new{
+                                        text = _("Delete all BT event mappings?\n\nThis will remove the custom event_map.lua file and clear runtime mappings."),
+                                        ok_text = _("Delete"),
+                                        ok_callback = function()
+                                            self:deleteEventMappings()
+                                            self:popup(_("Mappings deleted. You can now set up new ones."), 3)
+                                        end,
+                                        cancel_text = _("Cancel"),
+                                    })
+                                end,
+                            },
+                        },
+                    },
+                }
+                UIManager:show(button_dialog)
             else
                 local msg = _("✗ Event map has no BT event entries!\n\n") ..
                     _("Bluetooth button presses won't be recognized without BT event mappings.\n\n") ..
-                    _("This can be corrected automatically by creating a custom event_map.lua file with default BTAction mappings.")
+                    _("Choose how to set up your button mappings:")
                 
-                -- Show ConfirmBox with auto-correct option
-                UIManager:show(ConfirmBox:new{
-                    text = msg,
-                    ok_text = _("Correct Automatically"),
-                    cancel_text = _("Cancel"),
-                    ok_callback = function()
-                        local success, result = self:autoCorrectEventMap()
-                        if success then
-                            self:popup(_("✓ ") .. result, 7)
-                        else
-                            self:popup(_("✗ Auto-correction failed:\n") .. result, 7)
-                        end
-                    end,
-                })
+                -- Show ButtonDialog with multiple options
+                local ButtonDialog = require("ui/widget/buttondialog")
+                local button_dialog
+                button_dialog = ButtonDialog:new{
+                    title = msg,
+                    buttons = {
+                        {
+                            {
+                                text = _("Simple Guided Setup"),
+                                callback = function()
+                                    UIManager:close(button_dialog)
+                                    self:startGuidedSetup()
+                                end,
+                            },
+                        },
+                        {
+                            {
+                                text = _("Advanced Default"),
+                                callback = function()
+                                    UIManager:close(button_dialog)
+                                    local success, result = self:autoCorrectEventMap()
+                                    if success then
+                                        self:popup(_("✓ ") .. result, 7)
+                                    else
+                                        self:popup(_("✗ Auto-correction failed:\n") .. result, 7)
+                                    end
+                                end,
+                            },
+                        },
+                        {
+                            {
+                                text = _("Cancel"),
+                                callback = function()
+                                    UIManager:close(button_dialog)
+                                end,
+                            },
+                        },
+                    },
+                }
+                UIManager:show(button_dialog)
             end
         end,
     })
@@ -2572,8 +3060,11 @@ function Bluetooth:getCustomEventMapPath()
     return DataStorage:getSettingsDir() .. "/event_map.lua"
 end
 
-function Bluetooth:writeCustomEventMap()
-    -- Write the default BTAction mappings to settings/event_map.lua
+function Bluetooth:writeCustomEventMap(mappings)
+    -- Write event mappings to settings/event_map.lua
+    -- If mappings is provided, use that; otherwise use default_event_mappings
+    local mappings_to_write = mappings or self.default_event_mappings
+    
     local path = self:getCustomEventMapPath()
     local file = io.open(path, "w")
     if not file then
@@ -2581,27 +3072,60 @@ function Bluetooth:writeCustomEventMap()
     end
     
     -- Write the Lua table
-    file:write("-- Custom event map for Bluetooth plugin (8BitDo controller)\n")
+    file:write("-- Custom event map for Bluetooth plugin\n")
     file:write("-- Auto-generated by bluetooth.koplugin\n")
     file:write("-- This file is loaded by KOReader on startup\n\n")
     file:write("return {\n")
     
     -- Sort keys for consistent output
     local keys = {}
-    for k, _ in pairs(self.default_event_mappings) do
+    for k, _ in pairs(mappings_to_write) do
         table.insert(keys, k)
     end
     table.sort(keys)
     
     for _, key in ipairs(keys) do
-        local value = self.default_event_mappings[key]
+        local value = mappings_to_write[key]
         file:write(string.format("    [%d] = \"%s\",\n", key, value))
     end
     
     file:write("}\n")
     file:close()
     
+    -- Also inject into current session
+    local event_map = Device.input and Device.input.event_map
+    if event_map then
+        for code, name in pairs(mappings_to_write) do
+            event_map[code] = name
+        end
+    end
+    
     return true, path
+end
+
+function Bluetooth:deleteEventMappings()
+    -- Delete custom event_map.lua file and clear runtime BT mappings
+    local path = self:getCustomEventMapPath()
+    
+    -- Delete the file
+    os.remove(path)
+    
+    -- Clear BT mappings from runtime event_map
+    local event_map = Device.input and Device.input.event_map
+    if event_map then
+        -- Remove all BT* entries
+        local to_remove = {}
+        for code, name in pairs(event_map) do
+            if type(name) == "string" and name:match("^BT") then
+                table.insert(to_remove, code)
+            end
+        end
+        for _, code in ipairs(to_remove) do
+            event_map[code] = nil
+        end
+    end
+    
+    return true
 end
 
 function Bluetooth:injectEventMappings()
@@ -2726,8 +3250,20 @@ function Bluetooth:turnOnBluetoothCommands()
     local plugin_path = self.path
     local results = {}
     
+    -- Determine driver path (from config or auto-detect)
+    local driver_path = bt_config.driver_path or self:detectBluetoothDriverPath()
+    
     -- Step 1: Load Bluetooth power module
-    table.insert(results, self:executeCommand("insmod /drivers/mx6sll-ntx/wifi/sdio_bt_pwr.ko"))
+    if driver_path then
+        local driver_result = self:executeCommand("insmod " .. driver_path)
+        if driver_result and driver_result:match("No such file") then
+            table.insert(results, "Driver not found: " .. driver_path)
+        else
+            table.insert(results, driver_result)
+        end
+    else
+        table.insert(results, "Warning: No Bluetooth driver path found")
+    end
     
     -- Step 2: Load UHID module (from plugin directory)
     table.insert(results, self:executeCommand("insmod " .. plugin_path .. "/uhid/uhid.ko"))
@@ -2735,8 +3271,8 @@ function Bluetooth:turnOnBluetoothCommands()
     -- Step 3: Attach HCI (device-specific command)
     table.insert(results, self:executeCommand(bt_config.hci_attach))
     
-    -- Step 4: Initialize D-Bus/BlueZ
-    table.insert(results, self:executeCommand("dbus-send --system --dest=org.bluez --print-reply / org.freedesktop.DBus.ObjectManager.GetManagedObjects"))
+    -- Step 4: Initialize D-Bus/BlueZ (silently - we don't need the verbose output)
+    os.execute("dbus-send --system --dest=org.bluez / org.freedesktop.DBus.ObjectManager.GetManagedObjects > /dev/null 2>&1")
     
     -- Step 5: Bring up HCI interface
     table.insert(results, self:executeCommand("hciconfig hci0 up"))
@@ -2758,7 +3294,21 @@ function Bluetooth:onBluetoothOn()
         end
         self:popup(_("Bluetooth turned on.") .. config_note)
     else
-        self:popup(_("Bluetooth may not have started correctly.\n\nDetails:\n") .. result)
+        -- Truncate long results to avoid huge popups
+        local short_result = result or ""
+        if #short_result > 500 then
+            short_result = short_result:sub(1, 500) .. "\n...(truncated)"
+        end
+        -- Provide helpful troubleshooting info
+        local msg = _("Bluetooth may not have started correctly.\n\n")
+        msg = msg .. _("Check Diagnostics for more info.\n\n")
+        if detection_type == "default" then
+            msg = msg .. _("Note: Using default config. Your device may need different drivers.\n\n")
+        end
+        if short_result ~= "" then
+            msg = msg .. _("Details:\n") .. short_result
+        end
+        self:popup(msg, 10)
     end
 end
 
@@ -2772,6 +3322,9 @@ function Bluetooth:turnOffBluetooth()
     local bt_config, _ = self:getBluetoothConfig()
     local plugin_path = self.path
     
+    -- Determine driver path (from config or auto-detect)
+    local driver_path = bt_config.driver_path or self:detectBluetoothDriverPath()
+    
     -- Step 1: Bring down HCI interface
     self:executeCommand("hciconfig hci0 down")
     
@@ -2782,10 +3335,13 @@ function Bluetooth:turnOffBluetooth()
     self:executeCommand("pkill bluetoothd")
     
     -- Step 4: Unload Bluetooth power module
-    self:executeCommand("rmmod -w /drivers/mx6sll-ntx/wifi/sdio_bt_pwr.ko")
+    if driver_path then
+        -- For rmmod, we just need the module name, not the full path
+        self:executeCommand("rmmod sdio_bt_pwr")
+    end
     
     -- Step 5: Unload UHID module
-    self:executeCommand("rmmod -w " .. plugin_path .. "/uhid/uhid.ko")
+    self:executeCommand("rmmod uhid")
     -- Note: is_bluetooth_on cache will be updated on next isBluetoothOn() call
 end
 
@@ -2797,7 +3353,7 @@ function Bluetooth:onRefreshPairing()
 
     -- Dynamically update input device path (try to match by BT device name first)
     local path, is_known, method, extra = self:updateInputDevicePath()
-    
+
     local status, err = pcall(function()
         -- Ensure the device path is valid
         if not path or path == "" then
@@ -2835,7 +3391,7 @@ function Bluetooth:onConnectToDevice()
 
     -- Use saved device MAC address from config
     local success, result = self:connectToSavedDevice()
-    
+
     if success then
         self:popup(_("✓ ") .. result)
     else
