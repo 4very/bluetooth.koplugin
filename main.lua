@@ -222,7 +222,7 @@ function Bluetooth:stopLiveCapture()
     local unique_codes = {}
     local press_events = {}
     
-    for _, evt in ipairs(events) do
+    for i, evt in ipairs(events) do
         if evt.value == 1 then  -- Key press
             unique_codes[evt.code] = evt.code_name or true
             table.insert(press_events, evt)
@@ -242,7 +242,7 @@ function Bluetooth:stopLiveCapture()
     end
     table.sort(sorted_codes)
     
-    for _, code in ipairs(sorted_codes) do
+    for i, code in ipairs(sorted_codes) do
         local name = unique_codes[code]
         if type(name) == "string" then
             table.insert(lines, string.format("  Code %d = %s", code, name))
@@ -1074,8 +1074,8 @@ function Bluetooth:init()
     self:registerKeyEvents()
     self:loadBankConfig()
     
-    -- Set input device path based on device model
-    self.input_device_path, self.input_path_is_known = self:getInputDevicePath()
+    -- Set input device path (with detection method tracking)
+    self.input_device_path, self.input_path_is_known, self.input_path_method, self.input_path_extra = self:getInputDevicePath()
 end
 
 function Bluetooth:addToMainMenu(menu_items)
@@ -1696,21 +1696,80 @@ function Bluetooth:findHighestEventPath()
     return highest_path
 end
 
+function Bluetooth:findInputDeviceByBluetoothName()
+    -- Try to find input device by matching against saved Bluetooth device name
+    -- Returns: path, device_name if found; nil, nil otherwise
+    
+    local saved_mac, saved_name = self:getSavedDeviceMAC()
+    if not saved_name then
+        return nil, nil, "No saved Bluetooth device"
+    end
+    
+    -- Get all input devices
+    local devices = self:listAllInputDevices()
+    if #devices == 0 then
+        return nil, nil, "No input devices found"
+    end
+    
+    -- Try exact match first (case-insensitive)
+    local saved_lower = saved_name:lower()
+    for _, dev in ipairs(devices) do
+        if dev.name then
+            local dev_lower = dev.name:lower()
+            if dev_lower == saved_lower then
+                return dev.path, dev.name, "exact_match"
+            end
+        end
+    end
+    
+    -- Try partial match (saved name contains or is contained in device name)
+    for _, dev in ipairs(devices) do
+        if dev.name then
+            local dev_lower = dev.name:lower()
+            -- Check if one contains the other
+            if dev_lower:find(saved_lower, 1, true) or saved_lower:find(dev_lower, 1, true) then
+                return dev.path, dev.name, "partial_match"
+            end
+        end
+    end
+    
+    return nil, nil, "No matching device found"
+end
+
 function Bluetooth:getInputDevicePath()
-    -- Determine the correct input device path based on device model
+    -- Determine the correct input device path
+    -- Priority: 1) Match by Bluetooth device name, 2) Known device model, 3) Highest event, 4) Default
+    
+    -- First try: match by saved Bluetooth device name
+    local matched_path, matched_name, match_type = self:findInputDeviceByBluetoothName()
+    if matched_path then
+        return matched_path, true, "bt_name_match", matched_name
+    end
+    
+    -- Second try: known device model
     local model = Device.model
     local path = self.device_input_paths[model]
     if path then
-        return path, true  -- known path
+        return path, true, "device_model", model  -- known path
     end
     
-    -- Try to find the highest event number as best guess
+    -- Third try: find the highest event number as best guess
     local guessed_path = self:findHighestEventPath()
     if guessed_path then
-        return guessed_path, false  -- guessed path
+        return guessed_path, false, "highest_event", nil  -- guessed path
     end
     
-    return self.default_input_path, false  -- fallback
+    return self.default_input_path, false, "default", nil  -- fallback
+end
+
+function Bluetooth:updateInputDevicePath()
+    -- Re-detect the input device path (called when refreshing)
+    local path, is_known, method, extra = self:getInputDevicePath()
+    self.input_device_path = path
+    self.input_path_is_known = is_known
+    self.input_path_method = method
+    self.input_path_extra = extra
+    return path, is_known, method, extra
 end
 
 function Bluetooth:detectBluetoothBinaries()
@@ -1874,28 +1933,49 @@ function Bluetooth:getDiagnosticsMenu()
         end,
     })
     
-    -- Check 4: Input device path
+    -- Check 4: Input device path (re-check dynamically)
+    local current_path, path_is_known, path_method, path_extra = self:getInputDevicePath()
     local model = Device.model or "unknown"
-    local current_path = self.input_device_path
-    local path_is_known = self.input_path_is_known
-    local path_icon = path_is_known and "✓ " or "⚠ "
+    local path_icon
+    if path_method == "bt_name_match" then
+        path_icon = "✓ "  -- Best: matched by BT device name
+    elseif path_method == "device_model" then
+        path_icon = "✓ "  -- Good: known device model
+    else
+        path_icon = "⚠ "  -- Warning: guessing
+    end
     
     table.insert(diagnostics, {
         text = path_icon .. _("Input device path"),
         callback = function()
-            if path_is_known then
-                self:popup(_("✓ Input device path is configured for your device.\n\n") ..
+            -- Re-check dynamically when clicked
+            local p, known, method, extra = self:getInputDevicePath()
+            local msg
+            
+            if method == "bt_name_match" then
+                msg = _("✓ Input device matched by Bluetooth name!\n\n") ..
+                    _("This is the most reliable detection method.\n\n") ..
+                    _("Bluetooth device: ") .. (extra or "?") .. "\n" ..
+                    _("Input path: ") .. p .. "\n\n" ..
+                    _("The input device name matches your saved Bluetooth device.")
+            elseif method == "device_model" then
+                msg = _("✓ Input device path is configured for your device model.\n\n") ..
+                    _("Model: ") .. (extra or model) .. "\n" ..
+                    _("Path: ") .. p
+            elseif method == "highest_event" then
+                msg = _("⚠ Input device path is a best guess!\n\n") ..
                     _("Model: ") .. model .. "\n" ..
-                    _("Path: ") .. current_path, 5)
+                    _("Path: ") .. p .. _(" (highest event found)\n\n") ..
+                    _("Your device model is not in the known device list, and no Bluetooth name match was found.\n\n") ..
+                    _("The system detected the highest /dev/input/eventX as a best guess. This usually works but is not guaranteed.\n\n") ..
+                    _("Tip: Save a Bluetooth device in Device Management, and the plugin will try to match it by name next time.")
             else
-                local msg = _("⚠ Input device path is auto-detected!\n\n") ..
-                    _("Model: ") .. model .. "\n" ..
-                    _("Path: ") .. current_path .. _(" (highest event found)\n\n") ..
-                    _("Your device model is not in the known device list. ") ..
-                    _("The system detected the highest /dev/input/eventX as a best guess.\n\n") ..
-                    _("If Bluetooth input doesn't work, try editing the plugin to add your device to device_input_paths with the correct event path.")
-                self:popup(msg, 10)
+                msg = _("⚠ Using default input device path!\n\n") ..
+                    _("Path: ") .. p .. "\n\n" ..
+                    _("Could not detect the correct input device. Using fallback.")
             end
+            
+            self:popup(msg, 10)
         end,
     })
     
@@ -2169,12 +2249,13 @@ function Bluetooth:getDiagnosticsMenu()
     table.insert(diagnostics, {
         text = "📋 " .. _("List all input devices"),
         callback = function()
+            local gettext = _  -- Save reference before loop
             local devices = self:listAllInputDevices()
             if #devices == 0 then
-                self:popup(_("No input devices found in /dev/input/"), 5)
+                self:popup(gettext("No input devices found in /dev/input/"), 5)
             else
-                local lines = {_("Available input devices:\n")}
-                for _, dev in ipairs(devices) do
+                local lines = {gettext("Available input devices:\n")}
+                for idx, dev in ipairs(devices) do
                     local line = dev.path
                     if dev.name then
                         line = line .. "\n  " .. dev.name
@@ -2185,9 +2266,9 @@ function Bluetooth:getDiagnosticsMenu()
                     table.insert(lines, line)
                 end
                 table.insert(lines, "")
-                table.insert(lines, _("Current: ") .. self.input_device_path)
+                table.insert(lines, gettext("Current: ") .. self.input_device_path)
                 table.insert(lines, "")
-                table.insert(lines, _("Use 'Test specific device' to try a different one."))
+                table.insert(lines, gettext("Use 'Test specific device' to try a different one."))
                 self:popup(table.concat(lines, "\n"), 20)
             end
         end,
@@ -2276,8 +2357,9 @@ end
 function Bluetooth:getInputDeviceTestMenu()
     local menu = {}
     local devices = self:listAllInputDevices()
+    local gettext = _  -- Save gettext function reference before loops
     
-    for _, dev in ipairs(devices) do
+    for idx, dev in ipairs(devices) do
         local display = dev.path
         if dev.name then
             display = display .. " (" .. dev.name:sub(1, 25) .. ")"
@@ -2290,8 +2372,8 @@ function Bluetooth:getInputDeviceTestMenu()
                 local original_path = self.input_device_path
                 self.input_device_path = dev.path
                 
-                self:popup(_("Testing: ") .. dev.path .. 
-                    _("\n\nPress buttons on your controller for 10 seconds..."), 2)
+                self:popup(gettext("Testing: ") .. dev.path .. 
+                    gettext("\n\nPress buttons on your controller for 10 seconds..."), 2)
                 
                 UIManager:scheduleIn(0.5, function()
                     local raw_events = self:readRawInputEvents(10, true)
@@ -2300,15 +2382,15 @@ function Bluetooth:getInputDeviceTestMenu()
                     self.input_device_path = original_path
                     
                     if #raw_events == 0 then
-                        self:popup(_("No events from: ") .. dev.path .. 
-                            _("\n\nThis device doesn't appear to be your controller."), 5)
+                        self:popup(gettext("No events from: ") .. dev.path .. 
+                            gettext("\n\nThis device doesn't appear to be your controller."), 5)
                     else
                         -- Check if we got actual key events
                         local key_count = 0
                         local msc_count = 0
                         local unique_keys = {}
                         
-                        for _, evt in ipairs(raw_events) do
+                        for j, evt in ipairs(raw_events) do
                             if evt.type == 1 then
                                 key_count = key_count + 1
                                 if evt.value == 1 then
@@ -2320,17 +2402,17 @@ function Bluetooth:getInputDeviceTestMenu()
                         end
                         
                         local lines = {}
-                        table.insert(lines, _("Device: ") .. dev.path)
+                        table.insert(lines, gettext("Device: ") .. dev.path)
                         if dev.name then
-                            table.insert(lines, _("Name: ") .. dev.name)
+                            table.insert(lines, gettext("Name: ") .. dev.name)
                         end
                         table.insert(lines, "")
                         
                         if key_count > 0 then
                             table.insert(lines, "*** KEY EVENTS FOUND! ***")
                             table.insert(lines, "")
-                            table.insert(lines, _("Key events: ") .. key_count)
-                            table.insert(lines, _("Key codes detected:"))
+                            table.insert(lines, gettext("Key events: ") .. key_count)
+                            table.insert(lines, gettext("Key codes detected:"))
                             for code, name in pairs(unique_keys) do
                                 if type(name) == "string" then
                                     table.insert(lines, string.format("  %d = %s", code, name))
@@ -2339,12 +2421,12 @@ function Bluetooth:getInputDeviceTestMenu()
                                 end
                             end
                             table.insert(lines, "")
-                            table.insert(lines, _("This looks like the right device!"))
-                            table.insert(lines, _("Update input_device_path in the plugin"))
-                            table.insert(lines, _("to use: ") .. dev.path)
+                            table.insert(lines, gettext("This looks like the right device!"))
+                            table.insert(lines, gettext("Update input_device_path in the plugin"))
+                            table.insert(lines, gettext("to use: ") .. dev.path)
                         else
-                            table.insert(lines, _("Only scan codes (MSC): ") .. msc_count)
-                            table.insert(lines, _("No key events - not the right device."))
+                            table.insert(lines, gettext("Only scan codes (MSC): ") .. msc_count)
+                            table.insert(lines, gettext("No key events - not the right device."))
                         end
                         
                         self:popup(table.concat(lines, "\n"), 15)
@@ -2713,15 +2795,31 @@ function Bluetooth:onRefreshPairing()
         return
     end
 
+    -- Dynamically update input device path (try to match by BT device name first)
+    local path, is_known, method, extra = self:updateInputDevicePath()
+    
     local status, err = pcall(function()
         -- Ensure the device path is valid
-        if not self.input_device_path or self.input_device_path == "" then
+        if not path or path == "" then
             error("Invalid device path")
         end
 
-        Device.input:close(self.input_device_path) -- Close the input using the high-level parameter
-        Device.input:open(self.input_device_path)  -- Reopen the input using the high-level parameter
-        self:popup(_("Bluetooth device at ") .. self.input_device_path .. " is now open.")
+        Device.input:close(path) -- Close the input using the high-level parameter
+        Device.input:open(path)  -- Reopen the input using the high-level parameter
+        
+        -- Build informative message
+        local msg = _("Input device opened: ") .. path
+        if method == "bt_name_match" then
+            msg = msg .. "\n" .. _("(Matched by Bluetooth device name: ") .. (extra or "?") .. ")"
+        elseif method == "device_model" then
+            msg = msg .. "\n" .. _("(Known path for ") .. (extra or Device.model) .. ")"
+        elseif method == "highest_event" then
+            msg = msg .. "\n" .. _("(Best guess: highest event number)")
+        else
+            msg = msg .. "\n" .. _("(Default fallback)")
+        end
+        
+        self:popup(msg, 4)
     end)
 
     if not status then
