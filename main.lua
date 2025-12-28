@@ -103,6 +103,10 @@ Bluetooth.config_file = "bt_config.lua"
 Bluetooth.button_press_history = {}
 Bluetooth.max_history_size = 10
 
+-- Live capture mode (for discovering unknown key codes)
+Bluetooth.live_capture_active = false
+Bluetooth.live_capture_events = {}
+
 --[[
 Button press history functions
 --]]
@@ -159,6 +163,112 @@ function Bluetooth:clearButtonPressHistory()
     self.button_press_history = {}
 end
 
+function Bluetooth:startLiveCapture(duration)
+    -- Start capturing ALL key events that KOReader receives
+    duration = duration or 15
+    
+    self.live_capture_active = true
+    self.live_capture_events = {}
+    
+    -- Store original onKeyPress if we're overriding
+    if not self._original_key_handler then
+        self._original_key_handler = Device.input.handleKeyBoardEv
+    end
+    
+    local plugin = self
+    
+    -- Hook into the keyboard event handler
+    Device.input.handleKeyBoardEv = function(self_input, ev)
+        if plugin.live_capture_active then
+            -- Capture this event
+            table.insert(plugin.live_capture_events, {
+                timestamp = os.date("%H:%M:%S"),
+                code = ev.code,
+                value = ev.value,  -- 1=press, 0=release, 2=repeat
+                code_name = plugin:getKeyCodeName(ev.code),
+            })
+        end
+        -- Call original handler
+        if plugin._original_key_handler then
+            return plugin._original_key_handler(self_input, ev)
+        end
+    end
+    
+    -- Auto-stop after duration
+    UIManager:scheduleIn(duration, function()
+        plugin:stopLiveCapture()
+    end)
+end
+
+function Bluetooth:stopLiveCapture()
+    self.live_capture_active = false
+    
+    -- Restore original handler
+    if self._original_key_handler then
+        Device.input.handleKeyBoardEv = self._original_key_handler
+        self._original_key_handler = nil
+    end
+    
+    -- Display results
+    local events = self.live_capture_events
+    
+    if #events == 0 then
+        self:popup(_("No key events captured.\n\n") ..
+            _("Either no buttons were pressed, or the events aren't coming through as keyboard events."), 7)
+        return
+    end
+    
+    -- Analyze captured events
+    local unique_codes = {}
+    local press_events = {}
+    
+    for _, evt in ipairs(events) do
+        if evt.value == 1 then  -- Key press
+            unique_codes[evt.code] = evt.code_name or true
+            table.insert(press_events, evt)
+        end
+    end
+    
+    local lines = {}
+    
+    -- Summary
+    table.insert(lines, "=== KEY CODES DETECTED ===")
+    table.insert(lines, "")
+    
+    -- Sort codes numerically
+    local sorted_codes = {}
+    for code, _ in pairs(unique_codes) do
+        table.insert(sorted_codes, code)
+    end
+    table.sort(sorted_codes)
+    
+    for _, code in ipairs(sorted_codes) do
+        local name = unique_codes[code]
+        if type(name) == "string" then
+            table.insert(lines, string.format("  Code %d = %s", code, name))
+        else
+            table.insert(lines, string.format("  Code %d", code))
+        end
+    end
+    
+    table.insert(lines, "")
+    table.insert(lines, "=== ALL PRESS EVENTS ===")
+    for i, evt in ipairs(press_events) do
+        if i > 20 then
+            table.insert(lines, "  ... and " .. (#press_events - 20) .. " more")
+            break
+        end
+        local name_str = evt.code_name and (" (" .. evt.code_name .. ")") or ""
+        table.insert(lines, string.format("  [%s] Code %d%s", evt.timestamp, evt.code, name_str))
+    end
+    
+    table.insert(lines, "")
+    table.insert(lines, _("Total events: ") .. #events)
+    table.insert(lines, _("Unique key codes: ") .. #sorted_codes)
+    
+    self:popup(table.concat(lines, "\n"), 25)
+end
+
 function Bluetooth:isBluetoothOn()
     -- Actually check if Bluetooth is running by querying hci0 interface
     -- This is more reliable than tracking state manually
@@ -172,44 +282,169 @@ function Bluetooth:isBluetoothOn()
     end
 end
 
-function Bluetooth:readRawInputEvents(timeout_secs)
+-- Common Linux input event key codes for reference
+Bluetooth.key_code_names = {
+    -- Standard keys
+    [1] = "ESC", [2] = "1", [3] = "2", [4] = "3", [5] = "4",
+    [6] = "5", [7] = "6", [8] = "7", [9] = "8", [10] = "9",
+    [11] = "0", [14] = "BACKSPACE", [15] = "TAB", [28] = "ENTER",
+    [29] = "LEFTCTRL", [42] = "LEFTSHIFT", [54] = "RIGHTSHIFT",
+    [56] = "LEFTALT", [57] = "SPACE", [97] = "RIGHTCTRL", [100] = "RIGHTALT",
+    
+    -- Arrow keys
+    [103] = "UP", [105] = "LEFT", [106] = "RIGHT", [108] = "DOWN",
+    
+    -- Page navigation (common for page turners)
+    [104] = "PAGEUP", [109] = "PAGEDOWN", [102] = "HOME", [107] = "END",
+    
+    -- Function keys
+    [59] = "F1", [60] = "F2", [61] = "F3", [62] = "F4", [63] = "F5",
+    [64] = "F6", [65] = "F7", [66] = "F8", [67] = "F9", [68] = "F10",
+    [87] = "F11", [88] = "F12",
+    
+    -- Media keys (common on Bluetooth controllers)
+    [113] = "MUTE", [114] = "VOLUMEDOWN", [115] = "VOLUMEUP",
+    [116] = "POWER", [119] = "PAUSE", [128] = "STOP",
+    [139] = "MENU", [142] = "SLEEP", [143] = "WAKEUP",
+    [152] = "SCREENLOCK", [158] = "BACK", [159] = "FORWARD",
+    [163] = "NEXTSONG", [164] = "PLAYPAUSE", [165] = "PREVIOUSSONG",
+    [166] = "STOPCD", [167] = "RECORD", [168] = "REWIND", [169] = "PHONE",
+    [171] = "CONFIG", [172] = "HOMEPAGE", [173] = "REFRESH",
+    [176] = "EDIT", [177] = "SCROLLUP", [178] = "SCROLLDOWN",
+    [200] = "PLAYCD", [201] = "PAUSECD", [207] = "FASTFORWARD",
+    [208] = "BASSBOOST", [209] = "PRINT", [210] = "HP",
+    [211] = "CAMERA", [212] = "SOUND", [213] = "QUESTION",
+    [217] = "SEARCH", [224] = "BRIGHTNESSDOWN", [225] = "BRIGHTNESSUP",
+    
+    -- Bluetooth remote / gamepad buttons (BTN_* codes start at 0x100 = 256)
+    [256] = "BTN_0", [257] = "BTN_1", [258] = "BTN_2", [259] = "BTN_3",
+    [260] = "BTN_4", [261] = "BTN_5", [262] = "BTN_6", [263] = "BTN_7",
+    [264] = "BTN_8", [265] = "BTN_9",
+    
+    -- Mouse buttons
+    [272] = "BTN_LEFT", [273] = "BTN_RIGHT", [274] = "BTN_MIDDLE",
+    [275] = "BTN_SIDE", [276] = "BTN_EXTRA",
+    
+    -- Gamepad
+    [304] = "BTN_SOUTH/A", [305] = "BTN_EAST/B", [306] = "BTN_C",
+    [307] = "BTN_NORTH/X", [308] = "BTN_WEST/Y", [309] = "BTN_Z",
+    [310] = "BTN_TL", [311] = "BTN_TR", [312] = "BTN_TL2", [313] = "BTN_TR2",
+    [314] = "BTN_SELECT", [315] = "BTN_START", [316] = "BTN_MODE",
+    [317] = "BTN_THUMBL", [318] = "BTN_THUMBR",
+    
+    -- Consumer keys (additional)
+    [353] = "KEY_SELECT", [354] = "KEY_GOTO", [357] = "KEY_INFO",
+    [358] = "KEY_PROGRAM", [362] = "KEY_CHANNEL", [366] = "KEY_PLAYER",
+    [370] = "KEY_SUBTITLE", [372] = "KEY_VCR", [373] = "KEY_VCR2",
+    [374] = "KEY_SAT", [381] = "KEY_RED", [382] = "KEY_GREEN",
+    [383] = "KEY_YELLOW", [384] = "KEY_BLUE", [385] = "KEY_CHANNELUP",
+    [386] = "KEY_CHANNELDOWN", [388] = "KEY_LIST", [392] = "KEY_MEMO",
+    [398] = "KEY_DVD", [399] = "KEY_AUDIO", [400] = "KEY_VIDEO",
+    [407] = "KEY_NEXT", [412] = "KEY_PREVIOUS", [416] = "KEY_ZOOMIN",
+    [417] = "KEY_ZOOMOUT",
+}
+
+-- Event type names
+Bluetooth.event_type_names = {
+    [0] = "EV_SYN",
+    [1] = "EV_KEY",
+    [2] = "EV_REL",
+    [3] = "EV_ABS",
+    [4] = "EV_MSC",
+    [5] = "EV_SW",
+    [17] = "EV_LED",
+    [18] = "EV_SND",
+    [20] = "EV_REP",
+    [21] = "EV_FF",
+}
+
+function Bluetooth:getKeyCodeName(code)
+    return self.key_code_names[code] or nil
+end
+
+function Bluetooth:getEventTypeName(evt_type)
+    return self.event_type_names[evt_type] or ("TYPE_" .. evt_type)
+end
+
+function Bluetooth:readRawInputEvents(timeout_secs, include_all)
     -- Read raw input events from the input device using evtest
-    -- This uses a timeout to avoid blocking forever
+    -- timeout_secs: how long to listen
+    -- include_all: if true, include sync events and all types; if false, only key events
     timeout_secs = timeout_secs or 5
+    include_all = include_all or false
     local events = {}
     
-    local cmd = string.format("timeout %ds cat %s 2>/dev/null | od -An -tx1 -w24 | head -20", 
+    -- Use evtest for comprehensive output - capture more events
+    local evtest_cmd = string.format("timeout %ds evtest %s 2>/dev/null | grep -E '^Event:' | head -50", 
         timeout_secs, self.input_device_path)
     
-    local handle = io.popen(cmd)
-    if not handle then
-        return events
-    end
-    
-    local output = handle:read("*a")
-    handle:close()
-    
-    -- Parse the hex output - Linux input events are 24 bytes each:
-    -- struct input_event { time (16 bytes), type (2 bytes), code (2 bytes), value (4 bytes) }
-    -- For simplicity, we'll use evtest if available, otherwise parse manually
-    
-    -- Try evtest approach (more readable output)
-    local evtest_cmd = string.format("timeout %ds evtest %s 2>/dev/null | grep -E 'type [0-9]+' | head -10", 
-        timeout_secs, self.input_device_path)
-    handle = io.popen(evtest_cmd)
+    local handle = io.popen(evtest_cmd)
     if handle then
-        output = handle:read("*a")
+        local output = handle:read("*a")
         handle:close()
         
-        -- Parse evtest output like: "Event: time ..., type 1 (EV_KEY), code 19 (KEY_R), value 1"
+        -- Parse evtest output like: "Event: time 1234.567890, type 1 (EV_KEY), code 19 (KEY_R), value 1"
         for line in output:gmatch("[^\n]+") do
-            local evt_type, code, value = line:match("type (%d+).*code (%d+).*value (%d+)")
+            local evt_type, type_name, code, code_name, value = 
+                line:match("type (%d+) %(([^)]+)%), code (%d+) %(([^)]+)%), value (%d+)")
+            
+            if not evt_type then
+                -- Try simpler pattern without names
+                evt_type, code, value = line:match("type (%d+).*code (%d+).*value (%d+)")
+            end
+            
             if evt_type and code and value then
-                table.insert(events, {
-                    type = tonumber(evt_type),
-                    code = tonumber(code),
-                    value = tonumber(value),
-                })
+                local t = tonumber(evt_type)
+                local c = tonumber(code)
+                local v = tonumber(value)
+                
+                -- Skip sync events unless include_all is set
+                if include_all or t ~= 0 then
+                    table.insert(events, {
+                        type = t,
+                        type_name = type_name or self:getEventTypeName(t),
+                        code = c,
+                        code_name = code_name or self:getKeyCodeName(c),
+                        value = v,
+                        raw_line = line,
+                    })
+                end
+            end
+        end
+    end
+    
+    -- If evtest didn't work, try direct binary read as fallback
+    if #events == 0 then
+        local cmd = string.format("timeout %ds cat %s 2>/dev/null | od -An -td1 -w24 | head -30", 
+            timeout_secs, self.input_device_path)
+        
+        handle = io.popen(cmd)
+        if handle then
+            local output = handle:read("*a")
+            handle:close()
+            
+            -- Very basic parsing - each line is 24 bytes of an input_event struct
+            -- Bytes 16-17: type (little endian), 18-19: code (little endian), 20-23: value
+            for line in output:gmatch("[^\n]+") do
+                local bytes = {}
+                for b in line:gmatch("%-?%d+") do
+                    table.insert(bytes, tonumber(b))
+                end
+                if #bytes >= 20 then
+                    local t = bytes[17] + (bytes[18] or 0) * 256
+                    local c = bytes[19] + (bytes[20] or 0) * 256
+                    local v = bytes[21] or 0
+                    
+                    if include_all or t ~= 0 then
+                        table.insert(events, {
+                            type = t,
+                            type_name = self:getEventTypeName(t),
+                            code = c,
+                            code_name = self:getKeyCodeName(c),
+                            value = v,
+                        })
+                    end
+                end
             end
         end
     end
@@ -1835,32 +2070,298 @@ function Bluetooth:getDiagnosticsMenu()
     
     -- Raw input device monitor (reads actual key codes from device)
     table.insert(diagnostics, {
-        text = "📡 " .. _("Monitor raw input (5 sec)"),
+        text = "📡 " .. _("Event discovery (10 sec)"),
         callback = function()
-            self:popup(_("Reading raw input from:\n") .. self.input_device_path .. _("\n\nPress buttons on your controller now..."), 2)
+            self:popup(_("Listening for ALL events from:\n") .. self.input_device_path .. 
+                _("\n\nPress buttons on your Bluetooth controller now!\n\n") ..
+                _("This will capture any key codes your device sends."), 2)
             
             -- Schedule the actual read after popup closes
             UIManager:scheduleIn(0.5, function()
-                local raw_events = self:readRawInputEvents(5)
+                -- Get ALL events including all types
+                local raw_events = self:readRawInputEvents(10, true)
+                
                 if #raw_events == 0 then
-                    self:popup(_("No input events detected in 5 seconds.\n\n") ..
-                        _("Make sure:\n") ..
-                        _("• Bluetooth is on\n") ..
-                        _("• Controller is connected\n") ..
-                        _("• Input device path is correct: ") .. self.input_device_path, 7)
+                    self:popup(_("No input events detected in 10 seconds.\n\n") ..
+                        _("Troubleshooting:\n") ..
+                        _("1. Is Bluetooth turned on?\n") ..
+                        _("2. Is your controller connected?\n") ..
+                        _("3. Is evtest installed?\n") ..
+                        _("4. Input path: ") .. self.input_device_path .. "\n\n" ..
+                        _("Try running manually:\n") ..
+                        "evtest " .. self.input_device_path, 12)
                 else
-                    local lines = {}
+                    -- Group events by type for clearer display
+                    local key_events = {}
+                    local other_events = {}
+                    local unique_codes = {}
+                    
                     for _, evt in ipairs(raw_events) do
-                        table.insert(lines, string.format("Code: %d, Value: %d, Type: %d", 
-                            evt.code, evt.value, evt.type))
+                        if evt.type == 1 then -- EV_KEY
+                            table.insert(key_events, evt)
+                            -- Track unique key codes
+                            if evt.value == 1 then -- Key press (not release)
+                                unique_codes[evt.code] = evt.code_name or true
+                            end
+                        elseif evt.type ~= 0 then -- Not sync
+                            table.insert(other_events, evt)
+                        end
                     end
-                    self:popup(_("Raw input events captured:\n\n") .. table.concat(lines, "\n"), 10)
+                    
+                    local lines = {}
+                    
+                    -- Summary of unique key codes detected
+                    if next(unique_codes) then
+                        table.insert(lines, "=== KEY CODES DETECTED ===")
+                        for code, name in pairs(unique_codes) do
+                            if type(name) == "string" then
+                                table.insert(lines, string.format("  Code %d = %s", code, name))
+                            else
+                                table.insert(lines, string.format("  Code %d (unknown)", code))
+                            end
+                        end
+                        table.insert(lines, "")
+                    end
+                    
+                    -- Detailed key events
+                    if #key_events > 0 then
+                        table.insert(lines, "=== KEY EVENTS ===")
+                        for _, evt in ipairs(key_events) do
+                            local action = evt.value == 1 and "PRESS" or (evt.value == 0 and "RELEASE" or "REPEAT")
+                            local name_str = evt.code_name and (" (" .. evt.code_name .. ")") or ""
+                            table.insert(lines, string.format("  [%s] Code %d%s", action, evt.code, name_str))
+                        end
+                        table.insert(lines, "")
+                    end
+                    
+                    -- Other events (mouse, gamepad axes, etc)
+                    if #other_events > 0 then
+                        table.insert(lines, "=== OTHER EVENTS ===")
+                        for i, evt in ipairs(other_events) do
+                            if i > 10 then
+                                table.insert(lines, "  ... and " .. (#other_events - 10) .. " more")
+                                break
+                            end
+                            table.insert(lines, string.format("  Type %d (%s), Code %d, Value %d",
+                                evt.type, evt.type_name or "?", evt.code, evt.value))
+                        end
+                    end
+                    
+                    if #lines == 0 then
+                        table.insert(lines, "Only sync events detected (no key presses)")
+                    end
+                    
+                    -- Add hint if only MSC events detected
+                    if #key_events == 0 and #other_events > 0 then
+                        table.insert(lines, "")
+                        table.insert(lines, "NOTE: Only scan codes detected, no key events.")
+                        table.insert(lines, "Try 'List all input devices' to find the")
+                        table.insert(lines, "correct device with actual key events.")
+                    end
+                    
+                    self:popup(_("Events captured from input device:\n\n") .. table.concat(lines, "\n"), 20)
                 end
             end)
         end,
     })
     
+    -- List all input devices
+    table.insert(diagnostics, {
+        text = "📋 " .. _("List all input devices"),
+        callback = function()
+            local devices = self:listAllInputDevices()
+            if #devices == 0 then
+                self:popup(_("No input devices found in /dev/input/"), 5)
+            else
+                local lines = {_("Available input devices:\n")}
+                for _, dev in ipairs(devices) do
+                    local line = dev.path
+                    if dev.name then
+                        line = line .. "\n  " .. dev.name
+                    end
+                    if dev.handlers then
+                        line = line .. "\n  Handlers: " .. dev.handlers
+                    end
+                    table.insert(lines, line)
+                end
+                table.insert(lines, "")
+                table.insert(lines, _("Current: ") .. self.input_device_path)
+                table.insert(lines, "")
+                table.insert(lines, _("Use 'Test specific device' to try a different one."))
+                self:popup(table.concat(lines, "\n"), 20)
+            end
+        end,
+    })
+    
+    -- Test a specific input device
+    table.insert(diagnostics, {
+        text = "🔧 " .. _("Test specific device"),
+        sub_item_table_func = function()
+            return self:getInputDeviceTestMenu()
+        end,
+    })
+    
+    -- Live capture - hooks into KOReader's input system directly
+    table.insert(diagnostics, {
+        text = "🎯 " .. _("Live capture (15 sec)"),
+        callback = function()
+            if self.live_capture_active then
+                self:popup(_("Live capture already running!"), 2)
+                return
+            end
+            
+            self:popup(_("LIVE CAPTURE MODE\n\n") ..
+                _("Capturing ALL key events that KOReader receives for 15 seconds.\n\n") ..
+                _("Press buttons on your controller NOW!\n\n") ..
+                _("Results will appear when capture ends."), 3)
+            
+            UIManager:scheduleIn(0.5, function()
+                self:startLiveCapture(15)
+            end)
+        end,
+    })
+    
     return diagnostics
+end
+
+function Bluetooth:listAllInputDevices()
+    -- List all available input devices with their names
+    local devices = {}
+    
+    -- Get list of event devices
+    local handle = io.popen("ls /dev/input/event* 2>/dev/null | sort -V")
+    if handle then
+        local output = handle:read("*a")
+        handle:close()
+        
+        for path in output:gmatch("/dev/input/event%d+") do
+            local dev = { path = path }
+            
+            -- Try to get device name from /proc/bus/input/devices
+            local event_num = path:match("event(%d+)")
+            if event_num then
+                local proc_handle = io.popen("cat /proc/bus/input/devices 2>/dev/null")
+                if proc_handle then
+                    local proc_output = proc_handle:read("*a")
+                    proc_handle:close()
+                    
+                    -- Parse the devices file - look for the handler that matches our event
+                    local current_name = nil
+                    local current_handlers = nil
+                    for line in proc_output:gmatch("[^\n]+") do
+                        local name = line:match('^N: Name="(.-)"')
+                        if name then
+                            current_name = name
+                        end
+                        local handlers = line:match("^H: Handlers=(.*)")
+                        if handlers then
+                            current_handlers = handlers
+                            if handlers:match("event" .. event_num .. "[^%d]") or 
+                               handlers:match("event" .. event_num .. "$") then
+                                dev.name = current_name
+                                dev.handlers = current_handlers:gsub("%s+", " ")
+                            end
+                        end
+                    end
+                end
+            end
+            
+            table.insert(devices, dev)
+        end
+    end
+    
+    return devices
+end
+
+function Bluetooth:getInputDeviceTestMenu()
+    local menu = {}
+    local devices = self:listAllInputDevices()
+    
+    for _, dev in ipairs(devices) do
+        local display = dev.path
+        if dev.name then
+            display = display .. " (" .. dev.name:sub(1, 25) .. ")"
+        end
+        
+        table.insert(menu, {
+            text = display,
+            callback = function()
+                -- Temporarily test this device
+                local original_path = self.input_device_path
+                self.input_device_path = dev.path
+                
+                self:popup(_("Testing: ") .. dev.path .. 
+                    _("\n\nPress buttons on your controller for 10 seconds..."), 2)
+                
+                UIManager:scheduleIn(0.5, function()
+                    local raw_events = self:readRawInputEvents(10, true)
+                    
+                    -- Restore original path
+                    self.input_device_path = original_path
+                    
+                    if #raw_events == 0 then
+                        self:popup(_("No events from: ") .. dev.path .. 
+                            _("\n\nThis device doesn't appear to be your controller."), 5)
+                    else
+                        -- Check if we got actual key events
+                        local key_count = 0
+                        local msc_count = 0
+                        local unique_keys = {}
+                        
+                        for _, evt in ipairs(raw_events) do
+                            if evt.type == 1 then
+                                key_count = key_count + 1
+                                if evt.value == 1 then
+                                    unique_keys[evt.code] = evt.code_name or true
+                                end
+                            elseif evt.type == 4 then
+                                msc_count = msc_count + 1
+                            end
+                        end
+                        
+                        local lines = {}
+                        table.insert(lines, _("Device: ") .. dev.path)
+                        if dev.name then
+                            table.insert(lines, _("Name: ") .. dev.name)
+                        end
+                        table.insert(lines, "")
+                        
+                        if key_count > 0 then
+                            table.insert(lines, "*** KEY EVENTS FOUND! ***")
+                            table.insert(lines, "")
+                            table.insert(lines, _("Key events: ") .. key_count)
+                            table.insert(lines, _("Key codes detected:"))
+                            for code, name in pairs(unique_keys) do
+                                if type(name) == "string" then
+                                    table.insert(lines, string.format("  %d = %s", code, name))
+                                else
+                                    table.insert(lines, string.format("  %d", code))
+                                end
+                            end
+                            table.insert(lines, "")
+                            table.insert(lines, _("This looks like the right device!"))
+                            table.insert(lines, _("Update input_device_path in the plugin"))
+                            table.insert(lines, _("to use: ") .. dev.path)
+                        else
+                            table.insert(lines, _("Only scan codes (MSC): ") .. msc_count)
+                            table.insert(lines, _("No key events - not the right device."))
+                        end
+                        
+                        self:popup(table.concat(lines, "\n"), 15)
+                    end
+                end)
+            end,
+        })
+    end
+    
+    if #menu == 0 then
+        table.insert(menu, {
+            text = _("No input devices found"),
+            enabled = false,
+        })
+    end
+    
+    return menu
 end
 
 function Bluetooth:checkBankConfig()
