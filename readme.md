@@ -41,7 +41,7 @@ The plugin auto-detects your device type and uses the appropriate method.
 
 ### Credits
 
-MTK Bluetooth investigation based on work by the kobo.koplugin project.
+MTK Bluetooth support made possible by the excellent investigation and documentation by **OGKevin** and the kobo.koplugin project. Their thorough research into the MediaTek D-Bus interface (`com.kobo.mtk.bluedroid`) saved countless hours of reverse engineering.
 
 ---
 
@@ -234,7 +234,8 @@ Bank system is intended for controllers with fewer buttons than intended number 
 
 - Tested on Clara 2E and Libra 2
 - Libra 2 support thanks to MobileRead user **enji**
-- MTK device investigation thanks to MobileRead user **WaveEquation** and the kobo.koplugin project
+- MTK device support thanks to **OGKevin** (kobo.koplugin project) for the comprehensive Bluetooth investigation and D-Bus documentation
+- MTK device testing thanks to MobileRead user **WaveEquation**
 - 8BitDo Micro controller recommended
 
 ## Links
