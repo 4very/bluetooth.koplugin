@@ -2465,14 +2465,22 @@ function Bluetooth:checkDeviceType()
         return false, nil, info
     end
     
-    -- Check if it's a supported model
+    -- Check if it's a supported i.MX6 model
     local friendly_name = self.supported_devices[info.model]
-    
     if friendly_name then
+        info.device_type = "i.MX6"
         return true, friendly_name, info
-    else
-        return false, nil, info
     end
+    
+    -- Check if it's a supported MTK model
+    local mtk_name = self.mtk_device_models[info.model]
+    if mtk_name then
+        info.device_type = "MTK"
+        info.isMTK = true
+        return true, mtk_name, info
+    end
+    
+    return false, nil, info
 end
 
 function Bluetooth:getActualKoreaderPath()
@@ -2770,29 +2778,41 @@ function Bluetooth:getDiagnosticsMenu()
         text = device_icon .. _("Device type"),
         callback = function()
             -- Build device info string for display
+            -- Re-check for fresh info
+            local fresh_device_ok, fresh_friendly_name, fresh_device_info = self:checkDeviceType()
+            local is_mtk = self:isMTKDevice()
+            
             local info_str = _("Detected device info:\n") ..
-                _("  Model: ") .. device_info.model .. "\n" ..
-                _("  isKobo: ") .. tostring(device_info.isKobo) .. "\n" ..
-                _("  isEmulator: ") .. tostring(device_info.isEmulator) .. "\n" ..
-                _("  isSDL: ") .. tostring(device_info.isSDL)
+                _("  Model: ") .. fresh_device_info.model .. "\n" ..
+                _("  isKobo: ") .. tostring(fresh_device_info.isKobo) .. "\n" ..
+                _("  isMTK: ") .. tostring(is_mtk) .. "\n" ..
+                _("  isEmulator: ") .. tostring(fresh_device_info.isEmulator) .. "\n" ..
+                _("  isSDL: ") .. tostring(fresh_device_info.isSDL)
+            
+            device_ok = fresh_device_ok
+            friendly_name = fresh_friendly_name
+            device_info = fresh_device_info
             
             if device_ok then
-                self:popup(_("✓ Supported device detected:\n") .. friendly_name .. "\n(" .. device_info.model .. ")\n\n" .. info_str, 7)
+                local device_type_str = device_info.device_type and (" [" .. device_info.device_type .. "]") or ""
+                self:popup(_("✓ Supported device detected:\n") .. friendly_name .. device_type_str .. "\n(" .. device_info.model .. ")\n\n" .. info_str, 7)
             else
                 local msg
                 if not device_info.isKobo then
                     msg = _("✗ This is not a Kobo device!\n\n") ..
                         info_str .. "\n\n" ..
-                        _("This plugin only supports Kobo devices.\n\n") ..
-                        _("Supported devices:\n") ..
-                        _("• Kobo Libra 2\n") ..
-                        _("• Kobo Clara 2E")
+                        _("This plugin only supports Kobo devices.")
                 else
                     msg = _("✗ Unsupported Kobo model!\n\n") ..
                         info_str .. "\n\n" ..
-                        _("Supported devices:\n") ..
+                        _("Supported i.MX6 devices:\n") ..
                         _("• Kobo Libra 2 (Kobo_io)\n") ..
                         _("• Kobo Clara 2E (Kobo_goldfinch)\n\n") ..
+                        _("Supported MTK devices:\n") ..
+                        _("• Kobo Elipsa 2E (Kobo_condor)\n") ..
+                        _("• Kobo Libra Colour (Kobo_monza)\n") ..
+                        _("• Kobo Clara BW (Kobo_spaBW)\n") ..
+                        _("• Kobo Clara Colour (Kobo_spaColour)\n\n") ..
                         _("Corrective action:\n") ..
                         _("This plugin may still work if your device has compatible Bluetooth hardware. Check the 'Bluetooth commands' diagnostic to see if binaries were auto-detected.")
                 end

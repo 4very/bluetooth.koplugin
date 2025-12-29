@@ -242,3 +242,4 @@ Bank system is intended for controllers with fewer buttons than intended number 
 
 - [MobileRead Discussion](https://www.mobileread.com/forums/showthread.php?p=4444741)
 - [KOReader Bluetooth Issue](https://github.com/koreader/koreader/issues/9059)
+- [kobo.koreader Bluetooth Investigation](https://ogkevin.github.io/kobo.koplugin/dev/investigations/bluetooth/00-overview.html)
