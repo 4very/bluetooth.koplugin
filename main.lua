@@ -27,6 +27,9 @@ local Bluetooth = InputContainer:extend{
     current_bank = 1,  -- Current bank (1-based)
     banks = {},  -- Bank configurations
     bank_config_file = "bank_config.txt",  -- Bank configuration file
+    _watching = false,
+    _watch_path = nil,
+    _watch_inode = nil,
 }
 
 -- Input device paths per device model
@@ -657,8 +660,9 @@ end
 function Bluetooth:onDispatcherRegisterActions()
     Dispatcher:registerAction("bluetooth_on_action", {category="none", event="BluetoothOn", title=_("Bluetooth On"), general=true})
     Dispatcher:registerAction("bluetooth_off_action", {category="none", event="BluetoothOff", title=_("Bluetooth Off"), general=true})
-    Dispatcher:registerAction("refresh_pairing_action", {category="none", event="RefreshPairing", title=_("Refresh Device Input"), general=true}) -- New action
-    Dispatcher:registerAction("connect_to_device_action", {category="none", event="ConnectToDevice", title=_("Connect to Device"), general=true}) -- New action
+    Dispatcher:registerAction("refresh_pairing_action", {category="none", event="RefreshPairing", title=_("Refresh Device Input"), general=true})
+    Dispatcher:registerAction("toggle_input_watching_action", {category="none", event="ToggleInputWatching", title=_("Toggle Input Watching"), general=true})
+    Dispatcher:registerAction("connect_to_device_action", {category="none", event="ConnectToDevice", title=_("Connect to Device"), general=true})
     Dispatcher:registerAction("full_bluetooth_setup_action", {category="none", event="BTFullBluetoothSetup", title=_("Full Bluetooth Setup"), general=true})
     Dispatcher:registerAction("wifi_up_and_bluetooth_on_action", {category="none", event="BTWifiUpAndBluetoothOn", title=_("WiFi Up & Bluetooth On"), general=true})
 end
@@ -1135,6 +1139,14 @@ function Bluetooth:addToMainMenu(menu_items)
                 text = _("Refresh Device Input"),
                 callback = function()
                     self:onRefreshPairing()
+                end,
+            },
+            {
+                text_func = function()
+                    return self._watching and _("Stop Watching Input") or _("Watch Input Device")
+                end,
+                callback = function()
+                    self:toggleInputWatching()
                 end,
             },
             {
@@ -3381,6 +3393,55 @@ function Bluetooth:onRefreshPairing()
     if not status then
         self:popup(_("Error: ") .. err)
     end
+end
+
+function Bluetooth:toggleInputWatching()
+    local lfs = require("libs/libkoreader-lfs")
+    
+    if self._watching then
+        -- Stop watching
+        self._watching = false
+        UIManager:unschedule(self._poll)
+        self:popup(_("Stopped watching."), 2)
+        return
+    end
+    
+    -- Start watching: open device, record inode, start polling
+    local path = self:updateInputDevicePath()
+    if not path then
+        self:popup(_("No input device found."))
+        return
+    end
+    
+    pcall(function() Device.input:close(path) end)
+    Device.input:open(path)
+    
+    self._watch_path = path
+    self._watch_inode = (lfs.attributes(path) or {}).ino
+    self._watching = true
+    
+    self._poll = function()
+        if not self._watching then return end
+        local cur_inode = (lfs.attributes(self._watch_path) or {}).ino
+        if cur_inode ~= self._watch_inode then
+            local new_path = self:updateInputDevicePath()
+            if new_path then
+                pcall(function() Device.input:close(self._watch_path) end)
+                pcall(function() Device.input:close(new_path) end)
+                pcall(function() Device.input:open(new_path) end)
+                self._watch_path = new_path
+                self._watch_inode = (lfs.attributes(new_path) or {}).ino
+            end
+        end
+        UIManager:scheduleIn(1, self._poll)
+    end
+    
+    UIManager:scheduleIn(1, self._poll)
+    self:popup(_("Watching: ") .. path, 2)
+end
+
+function Bluetooth:onToggleInputWatching()
+    self:toggleInputWatching()
 end
 
 function Bluetooth:onConnectToDevice()
