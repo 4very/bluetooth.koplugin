@@ -11,12 +11,12 @@ Use a Bluetooth controller (like 8BitDo Micro) to turn pages and control KOReade
 | Other i.MX6 Kobos | i.MX6 | ⚠️ May work (auto-detection) |
 | Kobo Clara BW | MTK | ⚠️ Experimental |
 | Kobo Clara Colour | MTK | ⚠️ Experimental |
-| Kobo Libra Colour | MTK | ⚠️ Experimental |
+| Kobo Libra Colour | MTK | ✅ Community Tested |
 | Kobo Elipsa 2E | MTK | ⚠️ Experimental |
 
 ## MTK Device Support (Experimental)
 
-Support for MediaTek-based Kobo devices (Clara BW/Colour, Libra Colour, Elipsa 2E) is **highly experimental**.
+Support for MediaTek-based Kobo devices (Clara BW/Colour, Libra Colour, Elipsa 2E) is **experimental**, tests are conducted by community members; [Libra Colour](https://www.mobileread.com/forums/showpost.php?p=4557375&postcount=83) .
 
 ### How It Works
 
