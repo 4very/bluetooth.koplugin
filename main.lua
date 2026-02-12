@@ -4144,6 +4144,14 @@ function Bluetooth:onFullBluetoothSetup()
                                 Device.input:open(self.input_device_path)
                             end)
                             
+                            self:popup(_("Step 4.5: Injecting Event Map..."), 4)
+                            local mappings = self:getCurrentEventMap()
+                            local mapsuc, mapmsg = self:writeCustomEventMap(mappings)
+                            if not mapsuc then
+                                self:popup(_("Failed to save Event Map: ") .. mapmsg, 4)
+                                return
+                            end
+                            
                             if status then
                                 UIManager:scheduleIn(1, function()
                                     self:popup(_("✓ Device input refreshed"), 2)
